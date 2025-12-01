@@ -10,7 +10,7 @@
 //
 // This avoids hardcoding secrets in the repo. For quick local testing only,
 // you *could* temporarily hardcode it here.
-const GEMINI_API_KEY = window.GEMINI_API_KEY || "AIzaSyCYCBfVCy838RxxFJmIITmiBDJU2aVb43Q"; // <-- from your config/env
+const GEMINI_API_KEY = window.GEMINI_API_KEY || "AIzaSyBBbTPvchWDOX9bGSRDJv3qM_nLogDmWdY"; // <-- from your config/env
 const GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025";
 
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
