@@ -88,4 +88,3 @@ Rules:
 - Keep descriptions concise but complete
 - Do not invent or assume information
 `;
-

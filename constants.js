@@ -1,10 +1,14 @@
 // constants.js
-// Central place for keys, defaults, and catalog data.
+// Central place for keys, defaults, proxy config, and catalog data.
 
 export const CHAT_HISTORY_KEY = "skillMatchChatHistory";
 export const CERT_CATALOG_KEY = "skillMatchCertCatalog";
 export const USER_RULES_KEY = "skillMatchUserRules";
 export const LAST_RECOMMENDATIONS_KEY = "skillMatchLastRecommendations";
+
+// === INTEGRATED: Your Proxy URL ===
+export const GEMINI_PROXY_URL = 
+  "https://backend-vercel-repo-git-main-jouds-projects-8f56041e.vercel.app/api/gemini-proxy";
 
 // Import the certificates loader
 import { loadCertificates, getCertificatesDatabase } from "./certificates-data.js";
@@ -30,4 +34,3 @@ export const DEFAULT_RULES = [
   "Align recommendations to the candidate's current or target role.",
   "Avoid overlapping certifications unless the user explicitly asks."
 ];
-

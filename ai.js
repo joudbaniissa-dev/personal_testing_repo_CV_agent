@@ -2,6 +2,10 @@
 // API wrapper, prompts application, parsing, recommendation engine, and chat rendering helpers.
 
 import {
+  GEMINI_PROXY_URL,
+} from "./constants.js";
+
+import {
   certificateCatalog,
   getCatalogAsPromptString,
   summarizeRecommendationsForChat,
@@ -17,26 +21,10 @@ import {
 } from "./prompts.js";
 
 // ---------------------------------------------------------------------------
-// Proxy + Gemini call
+// Proxy + Gemini call - INTEGRATED: Your proxy function
 // ---------------------------------------------------------------------------
-const DEFAULT_PROXY_URL =
-  "https://backend-vercel-repo-git-main-jouds-projects-8f56041e.vercel.app/api/gemini-proxy";
-
-function getProxyUrl() {
-  return (
-    window.GEMINI_PROXY_URL ||
-    window.GEMINI_PROXY_URL_OVERRIDE ||
-    DEFAULT_PROXY_URL
-  );
-}
-
 export async function callGeminiProxy(payload) {
-  const proxyUrl = getProxyUrl();
-  if (!proxyUrl) {
-    throw new Error("Gemini proxy URL is not configured (window.GEMINI_PROXY_URL).");
-  }
-
-  const response = await fetch(proxyUrl, {
+  const response = await fetch(GEMINI_PROXY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -114,16 +102,17 @@ export function hideTypingIndicator() {
 // ---------------------------------------------------------------------------
 // Chat context builders
 // ---------------------------------------------------------------------------
-export function buildChatSystemPrompt(uploadedCvs) {
+export function buildChatSystemPrompt(uploadedCvs,language = 'en') {
   const catalogString = getCatalogAsPromptString();
   const hasCvContext = uploadedCvs.length > 0;
+  // Add Arabic instruction if needed
+  const langInstruction = language === 'ar' 
+    ? "IMPORTANT: You MUST answer strictly in Arabic. Explain technical terms in Arabic, but keep specific Certification Names in English as they appear in the catalog."
+    : "";
   const cvContext = hasCvContext
     ? `\n\n**Available CV Context:**\nThe user has uploaded ${uploadedCvs.length} CV(s). You can reference their experience, skills, and background when making recommendations.`
     : `\n\n**Note:** The user has not uploaded a CV yet. You can still answer general questions about certifications, but for personalized recommendations, encourage them to upload their CV.`;
-  // Add Arabic instruction
-  const langInstruction = language === 'ar' 
-    ? "IMPORTANT: You MUST answer strictly in Arabic. Keep technical terms explained in Arabic."
-    : "";
+
   return `${CHAT_SYSTEM_PROMPT_BASE.trim()}
 
 **Available Certifications Catalog:**
@@ -179,6 +168,13 @@ ${recSummary}`;
 // ---------------------------------------------------------------------------
 // CV parsing helpers (PDF, DOCX, TXT)
 // ---------------------------------------------------------------------------
+
+// Configure PDF.js worker
+if (window.pdfjsLib) {
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+
 async function extractTextFromPdf(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -290,9 +286,8 @@ export function buildAnalysisPromptForCvs(cvArray, rulesArray, language = 'en') 
   const catalogString = getCatalogAsPromptString();
   // Add Arabic instruction
   const langInstruction = language === 'ar'
-    ? "Output the 'reason' field strictly in Arabic."
+    ? "Output the 'reason' field strictly in Arabic. Keep 'candidateName' and 'certName' in their original text."
     : "Output the 'reason' field in English.";
-
   return `
 ${ANALYSIS_SYSTEM_PROMPT.trim()}
 
@@ -385,9 +380,9 @@ export async function analyzeCvsWithAI(cvArray, rulesArray, language = 'en') {
   return recommendations;
 }
 
-export function displayRecommendations(recommendations, containerEl, resultsSectionEl) {
+export function displayRecommendations(recommendations, containerEl, resultsSectionEl, language = 'en') {
   if (!containerEl || !resultsSectionEl) return;
-
+  const catalog = getFinalCertificateCatalog(); // Load catalog
   containerEl.innerHTML = "";
 
   if (
@@ -409,6 +404,11 @@ export function displayRecommendations(recommendations, containerEl, resultsSect
 
       if (candidate.recommendations && candidate.recommendations.length > 0) {
         candidate.recommendations.forEach((rec) => {
+          let displayName = rec.certName;
+          if (language === 'ar') {
+            const found = catalog.find(c => c.name === rec.certName || c.Certificate_Name_EN === rec.certName);
+            if (found && found.nameAr) displayName = found.nameAr;
+          }
           const card = document.createElement("div");
           card.className = "recommendation-card";
           card.innerHTML = `
@@ -444,4 +444,3 @@ export function displayRecommendations(recommendations, containerEl, resultsSect
 
 // Re-export utility used in UI for CV summary
 export { calculateTotalExperience };
-

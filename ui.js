@@ -1,5 +1,9 @@
 // ui.js
-// Entry point: wires DOM events and coordinates modules.
+// Entry point: wires DOM events, dynamic rules UI, and coordinates modules.
+
+import {
+  DEFAULT_RULES,
+} from "./constants.js";
 
 import {
   saveChatHistory,
@@ -26,6 +30,92 @@ import {
   displayRecommendations,
   callGeminiAPI,
 } from "./ai.js";
+
+// ===========================================================================
+// INTEGRATED: Dynamic Business Rules UI Functions (from your code)
+// ===========================================================================
+
+/**
+ * Create a single rule input field with delete button
+ */
+function createRuleInput(ruleText = "") {
+  const wrapper = document.createElement("div");
+  wrapper.className = "rule-input-wrapper";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Enter a business rule...";
+  input.value = ruleText;
+  input.className = "rule-input";
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "delete-rule-btn";
+  deleteBtn.innerHTML = "×";
+  deleteBtn.title = "Delete this rule";
+  
+  deleteBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    // Allow deleting all rules (no minimum check)
+    wrapper.remove();
+  });
+
+  wrapper.appendChild(input);
+  wrapper.appendChild(deleteBtn);
+  return wrapper;
+}
+
+/**
+ * Initialize the rules container with default or saved rules
+ */
+function initializeRulesUI(rules) {
+  const container = document.getElementById("rules-container");
+  if (!container) return;
+
+  // Clear existing content except status overlay
+  const statusOverlay = container.querySelector("#rules-status");
+  container.innerHTML = "";
+  if (statusOverlay) {
+    container.appendChild(statusOverlay);
+  }
+
+  if (rules && rules.length > 0) {
+    rules.forEach((rule) => {
+      container.appendChild(createRuleInput(rule));
+    });
+  } else {
+    // Start with one empty input
+    container.appendChild(createRuleInput());
+  }
+}
+
+/**
+ * Get all rules from the UI inputs
+ */
+function getRulesFromUI() {
+  const container = document.getElementById("rules-container");
+  if (!container) return [];
+
+  const inputs = container.querySelectorAll(".rule-input");
+  const rules = [];
+  inputs.forEach((input) => {
+    const value = input.value.trim();
+    if (value) {
+      rules.push(value);
+    }
+  });
+  return rules;
+}
+
+/**
+ * Enable/disable Start Recommending button based on CV upload status
+ */
+function updateStartRecommendingButton(uploadedCvs) {
+  const startBtn = document.getElementById("start-recommending-btn");
+  if (startBtn) {
+    startBtn.disabled = uploadedCvs.length === 0;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // UI helpers
@@ -66,6 +156,27 @@ function clearChatHistoryDom() {
 // ---------------------------------------------------------------------------
 // Modal helpers (CV review)
 // ---------------------------------------------------------------------------
+function formatDescriptionAsBullets(text) {
+  if (!text) return "";
+
+  // Normalize line breaks and insert breaks after periods to isolate sentences
+  const withBreaks = text.replace(/\r/g, "").replace(/\.\s+/g, ".\n");
+
+  const sentences = [];
+  withBreaks.split(/\n+/).forEach((part) => {
+    const cleaned = part.replace(/^[\s•\-]+/, "").trim();
+    if (!cleaned) return;
+    cleaned
+      .split(".")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .forEach((s) => sentences.push(s));
+  });
+
+  if (sentences.length === 0) return text.trim();
+  return sentences.map((s) => `• ${s}`).join("\n");
+}
+
 function createItemRow(item, fields) {
   const row = document.createElement("div");
   row.className = "item-row";
@@ -79,18 +190,20 @@ function createItemRow(item, fields) {
   fields.forEach((f) => {
     const field = typeof f === "string" ? { name: f } : f;
     const isTextarea = field.type === "textarea" || field.multiline;
+    const isDescriptionField = field.name === "description";
     const input = document.createElement(isTextarea ? "textarea" : "input");
     if (!isTextarea) input.type = "text";
+    let autoResizeFn = null;
     if (isTextarea) {
       input.rows = field.rows || 1;
       input.wrap = "soft";
       input.style.resize = "none";
-      const autoResize = (el) => {
+      autoResizeFn = (el) => {
         el.style.height = "auto";
         el.style.height = `${el.scrollHeight}px`;
       };
-      autoResize(input);
-      input.addEventListener("input", () => autoResize(input));
+      autoResizeFn(input);
+      input.addEventListener("input", () => autoResizeFn(input));
     }
     const placeholderText =
       field.placeholder ||
@@ -99,9 +212,40 @@ function createItemRow(item, fields) {
         : "");
     input.placeholder = placeholderText;
     input.value = item[field.name] || "";
+    if (isDescriptionField) {
+      const applyFormattedBullets = () => {
+        input.value = formatDescriptionAsBullets(input.value);
+        if (autoResizeFn) autoResizeFn(input);
+      };
+
+      applyFormattedBullets();
+
+      input.addEventListener("blur", () => {
+        applyFormattedBullets();
+      });
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const { selectionStart, selectionEnd, value } = input;
+          const insertText = "\n• ";
+          const newValue =
+            value.slice(0, selectionStart) +
+            insertText +
+            value.slice(selectionEnd);
+          input.value = newValue;
+          const newPos = selectionStart + insertText.length;
+          input.setSelectionRange(newPos, newPos);
+          if (autoResizeFn) autoResizeFn(input);
+        }
+      });
+    }
     input.dataset.field = field.name || "";
     if (field.className) input.classList.add(field.className);
     if (field.isBold) input.style.fontWeight = "700";
+    if (autoResizeFn) {
+      requestAnimationFrame(() => autoResizeFn(input));
+    }
     row.appendChild(input);
   });
 
@@ -191,7 +335,6 @@ function renderCvDetails(cv) {
           isBold: true,
         },
         { name: "school", placeholder: "School" },
-        { name: "period", placeholder: "Years" },
       ],
     },
     {
@@ -249,55 +392,125 @@ function renderCvDetails(cv) {
   });
 }
 
-function openCvModal(allCvResults) {
+// Modal state for CV review
+let modalCvData = [];
+let activeCvIndex = 0;
+
+function upsertByName(existing, incoming) {
+  const map = new Map();
+  existing.forEach((cv) => {
+    map.set(cv.name, cv);
+  });
+  incoming.forEach((cv) => {
+    map.set(cv.name, cv);
+  });
+  return Array.from(map.values());
+}
+
+function deepClone(obj) {
+  try {
+    return structuredClone(obj);
+  } catch (_) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+}
+
+function readCvFromDom(cv) {
+  if (!cv) return cv;
+  const updated = deepClone(cv);
+  ["experience", "education", "certifications", "skills"].forEach((sec) => {
+    const list = document.getElementById(`${cv.name}_${sec}_list`);
+    if (!list) return;
+    if (sec === "skills") {
+      updated.skills = [];
+      list.querySelectorAll(".skill-bubble").forEach((bubble) => {
+        const input = bubble.querySelector("input");
+        if (input) updated.skills.push({ title: input.value });
+      });
+    } else {
+      updated[sec] = [];
+      list.querySelectorAll(".item-row").forEach((row) => {
+        const entry = {};
+        row.querySelectorAll("input, textarea").forEach((input) => {
+          const key = input.dataset.field || input.placeholder.toLowerCase();
+          entry[key] = input.value;
+        });
+        updated[sec].push(entry);
+      });
+    }
+  });
+  return updated;
+}
+
+function syncActiveCvFromDom() {
+  if (!modalCvData.length) return;
+  const current = modalCvData[activeCvIndex];
+  const updated = readCvFromDom(current);
+  modalCvData[activeCvIndex] = updated;
+}
+
+function openCvModal(allCvResults, initialIndex = 0) {
   const modal = document.getElementById("cvModal");
   const tabs = document.getElementById("cvTabsContainer");
   const content = document.getElementById("cvResultsContainer");
+  const submitBtn = document.getElementById("submitCvReview");
   if (!modal || !tabs || !content) return;
+
+  modalCvData = deepClone(allCvResults || []);
+  activeCvIndex = initialIndex;
 
   // Center the modal using flex; matches CSS that expects flex display
   modal.style.display = "flex";
+  modal.removeAttribute("hidden");
   tabs.innerHTML = "";
   content.innerHTML = "";
 
-  allCvResults.forEach((cv, index) => {
+  modalCvData.forEach((cv, index) => {
     const tab = document.createElement("div");
     tab.className = "cv-tab";
     tab.textContent = cv.name;
     tab.dataset.index = index;
-    if (index === 0) tab.classList.add("active");
+    if (index === initialIndex) tab.classList.add("active");
 
     tab.addEventListener("click", () => {
+      // Before switching, save current tab edits
+      syncActiveCvFromDom();
       document
         .querySelectorAll(".cv-tab")
         .forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
-      renderCvDetails(allCvResults[index]);
+      activeCvIndex = index;
+      renderCvDetails(modalCvData[index]);
     });
 
     tabs.appendChild(tab);
   });
 
-  renderCvDetails(allCvResults[0]);
+  renderCvDetails(modalCvData[initialIndex] || modalCvData[0]);
+
+  // Dynamic submit label
+  if (submitBtn) {
+    submitBtn.textContent = modalCvData.length > 1 ? "Submit all CVs" : "Submit CV";
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Main bootstrap
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
-
-  // 1. Detect language automatically from HTML tag
+  // 1. Detect language
   const currentLang = document.documentElement.lang || 'en';
-
   let chatHistory = [];
   let userRules = loadUserRules();
   let uploadedCvs = [];
   let lastRecommendations = loadLastRecommendations();
+  let submittedCvData = [];
+  let lastProcessedFileNames = []; // Track last processed file names
 
   // Load catalog (async - loads from JSON file)
   await loadCertificateCatalog();
 
-  // DOM
+  // DOM elements
   const userInput = document.getElementById("user-input");
   const sendButton = document.getElementById("send-button");
 
@@ -305,14 +518,66 @@ document.addEventListener("DOMContentLoaded", async () => {
   const analyzeButton = document.getElementById("analyze-button");
   const cvUploadArea = document.getElementById("cv-upload-area");
 
-  const rulesInput = document.getElementById("rules-input");
-  const updateRulesButton = document.getElementById("update-rules");
-
   const uploadStatus = document.getElementById("upload-status");
   const rulesStatus = document.getElementById("rules-status");
 
   const resultsSection = document.getElementById("results-section");
   const recommendationsContainer = document.getElementById("recommendations-container");
+
+  const renderSubmittedCvBubbles = (allResults) => {
+    const container = document.getElementById("submitted-cv-bubbles");
+    if (!container) return;
+    container.innerHTML = "";
+
+    allResults.forEach((cv, idx) => {
+      const bubble = document.createElement("div");
+      bubble.className = "cv-summary-bubble";
+      bubble.title = "Click to re-open CV review";
+
+      const nameEl = document.createElement("span");
+      nameEl.className = "bubble-name";
+      nameEl.textContent = cv.name || "CV";
+
+      const metaEl = document.createElement("span");
+      metaEl.className = "bubble-meta";
+      const expCount = (cv.experience || []).length;
+      const eduCount = (cv.education || []).length;
+      const skillCount = (cv.skills || []).length;
+      metaEl.textContent = `Exp: ${expCount} | Edu: ${eduCount} | Skills: ${skillCount}`;
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "delete-bubble-btn";
+      deleteBtn.textContent = "×";
+      deleteBtn.title = "Remove this CV";
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        submittedCvData = submittedCvData.filter((_, i) => i !== idx);
+        renderSubmittedCvBubbles(submittedCvData);
+      });
+
+      bubble.appendChild(nameEl);
+      bubble.appendChild(metaEl);
+      bubble.appendChild(deleteBtn);
+
+      // Clicking the bubble re-opens the modal with that CV's extracted data
+      bubble.addEventListener("click", () => {
+        // Re-open modal with all submitted CVs and focus this one
+        openCvModal(submittedCvData, idx);
+      });
+
+      container.appendChild(bubble);
+    });
+  };
+
+  // INTEGRATED: Dynamic Rules UI elements
+  const addRuleBtn = document.getElementById("add-rule-btn");
+  const admitRulesBtn = document.getElementById("admit-rules-btn");
+  const startRecommendingBtn = document.getElementById("start-recommending-btn");
+
+  // INTEGRATED: Initialize rules UI with default rules
+  initializeRulesUI(DEFAULT_RULES);
+  userRules = [...DEFAULT_RULES];
 
   // Clear chat history in UI but keep stored messages if desired
   clearChatHistoryDom();
@@ -334,7 +599,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     showTypingIndicator();
 
     try {
-      const enhancedSystemPrompt = buildChatSystemPrompt(uploadedCvs,currentLang);
+      const enhancedSystemPrompt = buildChatSystemPrompt(uploadedCvs, currentLang);
 
       // CV context snippet
       let enhancedMessage = message;
@@ -434,12 +699,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       uploadedCvs = [];
       const files = Array.from(fileInput.files || []);
       if (files.length > 0) {
+        // New files selected - clear last processed names to allow processing
+        const newFileNames = files.map(f => f.name).sort().join(',');
+        if (newFileNames !== lastProcessedFileNames.sort().join(',')) {
+          lastProcessedFileNames = [];
+        }
         updateStatus(
           uploadStatus,
           `Selected ${files.length} file(s): ${files.map((f) => f.name).join(", ")}`
         );
       } else if (uploadStatus) {
         uploadStatus.innerHTML = "";
+        // File input cleared - clear last processed names
+        lastProcessedFileNames = [];
       }
     });
   }
@@ -447,9 +719,27 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Analyze CVs
   if (analyzeButton) {
     analyzeButton.addEventListener("click", async () => {
-      const files = Array.from(fileInput?.files || []);
-      if (files.length === 0) {
-        updateStatus(uploadStatus, "Please select at least one CV file.", true);
+      // Check if file input has any files selected (check both value and files)
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0 || !fileInput.value) {
+        // No new files selected – do not reuse previous uploads
+        uploadedCvs = [];
+        updateStartRecommendingButton(uploadedCvs);
+        // Ensure file input is cleared
+        if (fileInput) fileInput.value = "";
+        updateStatus(uploadStatus, "Please upload a CV file first.", true);
+        return;
+      }
+      
+      const files = Array.from(fileInput.files);
+      const currentFileNames = files.map(f => f.name).sort().join(',');
+      
+      // Check if these are the same files we just processed and submitted
+      if (lastProcessedFileNames.length > 0 && 
+          currentFileNames === lastProcessedFileNames.sort().join(',')) {
+        // Same files as before - user needs to select new files
+        uploadedCvs = [];
+        updateStartRecommendingButton(uploadedCvs);
+        updateStatus(uploadStatus, "Please upload a CV file first.", true);
         return;
       }
 
@@ -461,7 +751,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Extract and parse
         for (const file of files) {
           const rawText = await extractTextFromFile(file);
+          console.log(`--- DEBUG: Extracted text from ${file.name} ---`);
+          console.log(rawText);
+
+          showLoading(uploadStatus, `Parsing ${file.name} into sections...`);
           const structuredSections = await parseCvIntoStructuredSections(rawText);
+          
+          console.log(`--- DEBUG: Parsed sections for ${file.name} ---`);
+          console.log(structuredSections);
+
           uploadedCvs.push({
             name: file.name,
             text: rawText,
@@ -469,20 +767,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           });
         }
 
-        showLoading(uploadStatus, "Analyzing CVs with AI...");
+        console.log("--- All parsed CVs ready for frontend ---");
+        console.log(uploadedCvs);
 
-        const recommendations = await analyzeCvsWithAI(uploadedCvs, userRules,currentLang);
-
-        // Persist for chat grounding
-        lastRecommendations = recommendations;
-        saveLastRecommendations(recommendations);
-
-        // Render
-        displayRecommendations(
-          recommendations,
-          recommendationsContainer,
-          resultsSection
-        );
+        // INTEGRATED: Enable Start Recommending button
+        updateStartRecommendingButton(uploadedCvs);
 
         // Transform uploadedCvs to the format expected by the modal (rich view)
         const cvResultsForModal = uploadedCvs.map((cv) => {
@@ -509,7 +798,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                     }`.trim()
                   : edu.major || "",
               school: edu.school || edu.institution || "",
-              period: edu.period || edu.years || "",
             })),
             certifications: (s.certifications || []).map((cert) => ({
               title: `${cert.title || ""}${
@@ -522,8 +810,14 @@ document.addEventListener("DOMContentLoaded", async () => {
           };
         });
 
-        openCvModal(cvResultsForModal);
-        updateStatus(uploadStatus, `Analysis complete for ${files.length} CV(s).`);
+        // Save processed file names to prevent reprocessing
+        lastProcessedFileNames = files.map(f => f.name);
+        
+        openCvModal(cvResultsForModal, 0);
+        updateStatus(uploadStatus, `Parsed ${files.length} CV(s). Review and submit.`);
+        
+        // Don't clear file input here - keep it until submission
+        // It will be cleared in the submit handler
       } catch (err) {
         console.error("Analysis Error:", err);
         updateStatus(
@@ -531,6 +825,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           `Failed to analyze CVs. Error: ${err.message}`,
           true
         );
+        // Clear file input on error so user must select again
+        if (fileInput) fileInput.value = "";
+        uploadedCvs = [];
+        updateStartRecommendingButton(uploadedCvs);
       } finally {
         hideLoading(uploadStatus);
         analyzeButton.disabled = false;
@@ -538,23 +836,57 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Rules update
-  if (updateRulesButton) {
-    updateRulesButton.addEventListener("click", async () => {
-      const rulesText = (rulesInput?.value || "").trim();
-      if (!rulesText) {
+  // ===========================================================================
+  // INTEGRATED: Dynamic Business Rules UI Event Handlers
+  // ===========================================================================
+
+  // Add Rule button - Creates new empty input field
+  if (addRuleBtn) {
+    addRuleBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const container = document.getElementById("rules-container");
+      if (container) {
+        const newInput = createRuleInput();
+        // Insert before status overlay if it exists
+        const statusOverlay = container.querySelector("#rules-status");
+        if (statusOverlay) {
+          container.insertBefore(newInput, statusOverlay);
+        } else {
+          container.appendChild(newInput);
+        }
+        // Focus on the new input
+        const input = newInput.querySelector('input');
+        if (input) input.focus();
+      }
+    });
+  }
+
+  // Admit Rules button - Saves and parses rules
+  if (admitRulesBtn) {
+    admitRulesBtn.addEventListener("click", async () => {
+      const rules = getRulesFromUI();
+      
+      // Allow empty rules (user deleted all)
+      if (rules.length === 0) {
+        userRules = [];
+        saveUserRules(userRules);
         updateStatus(
           rulesStatus,
-          "Please enter some rules before updating.",
-          true
+          "All rules cleared. AI will use its own reasoning for recommendations."
+        );
+        addMessage(
+          "I've cleared all business rules. I'll now use my own judgment when making recommendations.",
+          false
         );
         return;
       }
 
       showLoading(rulesStatus, "Parsing rules with AI...");
-      updateRulesButton.disabled = true;
+      admitRulesBtn.disabled = true;
 
       try {
+        // Convert rules array to text for AI parsing
+        const rulesText = rules.join("\n");
         const parsedRules = await parseAndApplyRules(rulesText);
         userRules = parsedRules;
         saveUserRules(userRules);
@@ -575,7 +907,76 @@ document.addEventListener("DOMContentLoaded", async () => {
         );
       } finally {
         hideLoading(rulesStatus);
-        updateRulesButton.disabled = false;
+        admitRulesBtn.disabled = false;
+      }
+    });
+  }
+
+  // Start Recommending button - Generates recommendations
+  if (startRecommendingBtn) {
+    startRecommendingBtn.addEventListener("click", async () => {
+      // Check if CVs are uploaded
+      if (uploadedCvs.length === 0) {
+        updateStatus(
+          rulesStatus,
+          "Please upload and analyze CVs first.",
+          true
+        );
+        return;
+      }
+
+      // Get current rules from UI (always use fresh UI state)
+      const rules = getRulesFromUI();
+
+      showLoading(rulesStatus, "Generating recommendations...");
+      startRecommendingBtn.disabled = true;
+
+      try {
+        // ALWAYS update userRules based on current UI state
+        if (rules.length > 0) {
+          // If there are rules, parse them
+          const rulesText = rules.join("\n");
+          userRules = await parseAndApplyRules(rulesText);
+          saveUserRules(userRules);
+        } else {
+          // If user deleted all rules, use empty array (AI will use its own reasoning)
+          userRules = [];
+          saveUserRules(userRules);
+          console.log("📝 No rules provided - AI will use its own reasoning");
+        }
+
+        // Generate recommendations with current rules (empty array if no rules)
+        const recommendations = await analyzeCvsWithAI(uploadedCvs, userRules, currentLang);
+
+        // Persist recommendations for chat grounding
+        lastRecommendations = recommendations;
+        saveLastRecommendations(recommendations);
+
+        // Display recommendations
+        displayRecommendations(
+          recommendations,
+          recommendationsContainer,
+          resultsSection,
+          currentLang
+        );
+
+        updateStatus(rulesStatus, "Recommendations generated successfully!");
+        setTimeout(() => {
+  if (resultsSection) {
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    console.log('✅ Scrolled to recommendations section');
+  }
+}, 300);
+      } catch (err) {
+        console.error("Recommendation Error:", err);
+        updateStatus(
+          rulesStatus,
+          `Failed to generate recommendations. Error: ${err.message}`,
+          true
+        );
+      } finally {
+        hideLoading(rulesStatus);
+        startRecommendingBtn.disabled = uploadedCvs.length === 0;
       }
     });
   }
@@ -593,52 +994,48 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (modal && e.target === modal) modal.style.display = "none";
   });
 
-  // Submit CV review (logs only)
+  // ===========================================================================
+  // INTEGRATED: Submit CV review (with modal close and scroll)
+  // ===========================================================================
   const submitCvReview = document.getElementById("submitCvReview");
   if (submitCvReview) {
     submitCvReview.addEventListener("click", () => {
-      const tabs = document.querySelectorAll(".cv-tab");
-      let allResults = [];
-
-      tabs.forEach((tab) => {
-        const name = tab.textContent;
-        const result = {
-          name,
-          experience: [],
-          education: [],
-          certifications: [],
-          skills: [],
-        };
-
-        ["experience", "education", "certifications", "skills"].forEach((sec) => {
-          const list = document.getElementById(`${name}_${sec}_list`);
-          if (!list) return;
-
-          if (sec === "skills") {
-            list.querySelectorAll(".skill-bubble").forEach((bubble) => {
-              const input = bubble.querySelector("input");
-              if (input) {
-                result.skills.push({ title: input.value });
-              }
-            });
-          } else {
-            list.querySelectorAll(".item-row").forEach((row) => {
-              const entry = {};
-              row.querySelectorAll("input, textarea").forEach((input) => {
-                const key = input.dataset.field || input.placeholder.toLowerCase();
-                entry[key] = input.value;
-              });
-              result[sec].push(entry);
-            });
-          }
-        });
-
-        allResults.push(result);
-      });
+      // Save current tab edits back into modal state
+      syncActiveCvFromDom();
+      const allResults = deepClone(modalCvData);
 
       console.log("FINAL SUBMITTED CV DATA →", allResults);
-      alert("Submitted! Check console for full JSON output.");
+      // Upsert by CV name so previously submitted CVs keep their content
+      submittedCvData = upsertByName(submittedCvData, allResults);
+      renderSubmittedCvBubbles(submittedCvData);
+
+      // Clear file input so user must select new files for next analysis
+      if (fileInput) {
+        fileInput.value = "";
+      }
+      // Clear uploadedCvs so it doesn't process old data
+      uploadedCvs = [];
+      // Keep lastProcessedFileNames to prevent reprocessing same files
+      // They will be cleared when new files are selected
+      updateStartRecommendingButton(uploadedCvs);
+
+      // INTEGRATED: Close modal
+      const modal = document.getElementById("cvModal");
+      if (modal) {
+        modal.style.display = "none";
+        console.log('✅ Modal closed');
+      }
+
+      // Submit now only saves data; keep recommendations section hidden/reset
+      if (recommendationsContainer) {
+        recommendationsContainer.innerHTML = "";
+      }
+      if (resultsSection) {
+        resultsSection.classList.add("hidden");
+        resultsSection.style.display = "none";
+      }
     });
   }
 });
+
 

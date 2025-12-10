@@ -16,6 +16,7 @@ export async function loadCertificates() {
   }
   
   // Load certificates from JSON file
+  // Uses import.meta.url to find the file relative to THIS script, not the HTML page
   loadPromise = fetch(new URL('./Certificates.json', import.meta.url))
     .then((response) => {
       if (!response.ok) {
@@ -52,4 +53,3 @@ export async function loadCertificates() {
 export function getCertificatesDatabase() {
   return CERTIFICATES_DATABASE || [];
 }
-

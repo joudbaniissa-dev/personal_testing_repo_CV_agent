@@ -13,7 +13,8 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="site-header-inner container">
+    <div class="site-header-inner container" style="justify-content: space-between;">
+      
       <div class="brand">
         <i class="fas fa-user-graduate"></i>
         <div>
@@ -21,10 +22,13 @@
           <p class="tagline">توصيات التدريب والشهادات المدعومة بالذكاء الاصطناعي</p>
         </div>
       </div>
-      
-      <div style="margin-right: auto;">
-        <a href="../index.html" class="lang-btn">English <i class="fas fa-globe"></i></a>
+
+      <div>
+        <a href="../index.html" class="lang-btn">
+          English <i class="fas fa-globe"></i>
+        </a>
       </div>
+
     </div>
   </header>
 
@@ -48,7 +52,7 @@
         </div>
     
         <div class="chat-input">
-          <input id="user-input" type="text" placeholder="اسأل عن البرامج التدريبية، ارفع السير الذاتية، أو ضع قواعد..." autocomplete="off" />
+          <input id="user-input" type="text" placeholder="اسأل عن البرامج، ارفع السير الذاتية..." autocomplete="off" />
           <button id="send-button"><i class="fas fa-paper-plane"></i></button>
         </div>
       </section>
@@ -58,18 +62,30 @@
           <h3><i class="fas fa-file-upload"></i> رفع السير الذاتية</h3>
           <div id="cv-upload-area" class="file-upload-area" tabindex="0">
             <i class="fas fa-cloud-upload-alt fa-2x"></i>
-            <p class="muted">اسحب وأفلت ملفات السيرة الذاتية هنا أو انقر للتصفح</p>
+            <p class="muted">اسحب وأفلت الملفات هنا أو انقر للتصفح</p>
             <input id="file-input" type="file" multiple accept=".pdf,.docx,.txt" />
+            <div id="upload-status"></div>
           </div>
           <button id="analyze-button" class="primary action-full"><i class="fas fa-brain"></i> تحليل السير الذاتية</button>
-          <div id="upload-status" class="status-area"></div>
+          <div id="submitted-cv-bubbles" class="submitted-cv-bubbles" aria-live="polite"></div>
         </section>
     
         <section class="panel-section card rules-section">
           <h3><i class="fas fa-gavel"></i> قواعد العمل</h3>
-          <textarea id="rules-input" placeholder="أضف قواعد عملك هنا، قاعدة واحدة في كل سطر."></textarea>
-          <button id="update-rules" class="primary action-full"><i class="fas fa-sync-alt"></i> تحديث القواعد</button>
-          <div id="rules-status" class="status-area"></div>
+          <div id="rules-container" class="rules-container">
+            <div id="rules-status"></div>
+          </div>
+          <button id="add-rule-btn" type="button" class="add-rule-btn">
+            <i class="fas fa-plus"></i> إضافة قاعدة
+          </button>
+          <div class="rules-actions">
+            <button id="admit-rules-btn" class="primary action-half">
+              <i class="fas fa-check"></i> حفظ القواعد
+            </button>
+            <button id="start-recommending-btn" class="primary action-half" disabled>
+              <i class="fas fa-star"></i> إصدار التوصيات
+            </button>
+          </div>
         </section>
       </aside>
     </div>
@@ -77,7 +93,7 @@
     <div id="cvModal" class="cv-modal" role="dialog" aria-modal="true" aria-labelledby="cvModalTitle" hidden>
       <div class="cv-modal-content">
         <button class="cv-close-btn" aria-label="إغلاق">&times;</button>
-        <h2 id="cvModalTitle">مراجعة تحليل السيرة الذاتية</h2>
+        <h2 id="cvModalTitle">مراجعة التحليل</h2>
         <div id="cvTabsContainer" class="cv-tabs" role="tablist"></div>
         <div id="cvResultsContainer" class="cv-results" role="region"></div>
         <button id="submitCvReview" class="cv-submit-btn">إرسال</button>
