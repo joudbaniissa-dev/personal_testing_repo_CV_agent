@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_RULES,
+  DEFAULT_RULES_EN, // <--- Add this
+  DEFAULT_RULES_AR, // <--- Add this
   getDefaultRules, // <--- Add this
 } from "./constants.js";
 
@@ -71,7 +73,38 @@ const UI_TEXT = {
     submitAll: "إرسال جميع السير الذاتية"
   }
 };
+// --- TRANSLATIONS FOR STATUS MESSAGES ---
+const STATUS_MESSAGES = {
+  en: {
+    analyzing: "Analyzing CVs with AI...",
+    extracting: "Extracting text from CVs...",
+    parsing: "Parsing CV into sections...",
+    success: "Analysis complete! Review and submit.",
+    error: "Failed to analyze CVs.",
+    selectFile: "Please select at least one CV file.",
+    generating: "Generating recommendations...",
+    genSuccess: "Recommendations generated successfully!",
+    rulesSaved: "Rules saved successfully.",
+    rulesCleared: "Rules cleared."
+  },
+  ar: {
+    analyzing: "جاري تحليل السير الذاتية بالذكاء الاصطناعي...",
+    extracting: "جاري استخراج النص من الملفات...",
+    parsing: "جاري تقسيم السيرة الذاتية إلى أقسام...",
+    success: "اكتمل التحليل! يرجى المراجعة والإرسال.",
+    error: "فشل في تحليل السير الذاتية.",
+    selectFile: "يرجى اختيار ملف سيرة ذاتية واحد على الأقل.",
+    generating: "جاري إصدار التوصيات...",
+    genSuccess: "تم إصدار التوصيات بنجاح!",
+    rulesSaved: "تم حفظ القواعد بنجاح.",
+    rulesCleared: "تم مسح القواعد."
+  }
+};
 
+function getStatusText(key) {
+  const lang = document.documentElement.lang === 'ar' ? 'ar' : 'en';
+  return STATUS_MESSAGES[lang][key] || STATUS_MESSAGES['en'][key];
+}
 function getUiText(key) {
   const lang = document.documentElement.lang === 'ar' ? 'ar' : 'en';
   return UI_TEXT[lang][key] || UI_TEXT['en'][key];
@@ -165,21 +198,23 @@ function updateStartRecommendingButton(uploadedCvs) {
 // ---------------------------------------------------------------------------
 // UI helpers
 // ---------------------------------------------------------------------------
-function updateStatus(element, message, isError = false) {
+function updateStatus(element, messageKey, isError = false, rawText = null) {
   if (!element) return;
+  // Use key to find translation, or fallback to rawText if provided (for filenames)
+  const text = rawText || getStatusText(messageKey) || messageKey;
+  
   element.innerHTML = `
     <div class="status-message ${isError ? "status-error" : "status-success"}">
-      ${message}
+      ${text}
     </div>
   `;
-  setTimeout(() => {
-    element.innerHTML = "";
-  }, 8000);
+  setTimeout(() => { element.innerHTML = ""; }, 8000);
 }
 
-function showLoading(element, message) {
+function showLoading(element, messageKey, rawText = null) {
   if (!element) return;
-  element.innerHTML = `<div class="loader"></div>${message}`;
+  const text = rawText || getStatusText(messageKey) || messageKey;
+  element.innerHTML = `<div class="loader"></div>${text}`;
 }
 
 function hideLoading(element) {
@@ -623,12 +658,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   const admitRulesBtn = document.getElementById("admit-rules-btn");
   const startRecommendingBtn = document.getElementById("start-recommending-btn");
 
-  // INTEGRATED: Initialize rules UI with default rules based on language
+  // --- INTEGRATED: Smart Rules Initialization ---
   const defaultRulesForLang = getDefaultRules(currentLang);
   
-  // Use saved rules if they exist, otherwise use translated defaults
-  const rulesToDisplay = (userRules && userRules.length > 0) ? userRules : defaultRulesForLang;
-  
+  // Helper to check if arrays are equal
+  const areRulesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  let rulesToDisplay = userRules;
+
+  // 1. If we are in Arabic, but rules are the English Defaults -> Switch to Arabic Defaults
+  if (currentLang === 'ar' && areRulesEqual(userRules, DEFAULT_RULES_EN)) {
+    rulesToDisplay = DEFAULT_RULES_AR;
+  }
+  // 2. If we are in English, but rules are the Arabic Defaults -> Switch to English Defaults
+  else if (currentLang === 'en' && areRulesEqual(userRules, DEFAULT_RULES_AR)) {
+    rulesToDisplay = DEFAULT_RULES_EN;
+  }
+  // 3. If empty, use current language defaults
+  else if (!userRules || userRules.length === 0) {
+    rulesToDisplay = defaultRulesForLang;
+  }
+
+  // Initialize UI
   initializeRulesUI(rulesToDisplay);
   userRules = [...rulesToDisplay];
 
@@ -779,7 +830,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateStartRecommendingButton(uploadedCvs);
         // Ensure file input is cleared
         if (fileInput) fileInput.value = "";
-        updateStatus(uploadStatus, "Please upload a CV file first.", true);
+        updateStatus(uploadStatus, "selectFile", true);
         return;
       }
       
@@ -792,11 +843,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         // Same files as before - user needs to select new files
         uploadedCvs = [];
         updateStartRecommendingButton(uploadedCvs);
-        updateStatus(uploadStatus, "Please upload a CV file first.", true);
+        updateStatus(uploadStatus, "selectFile", true);
         return;
       }
 
-      showLoading(uploadStatus, "Extracting text from CVs...");
+      showLoading(uploadStatus, "extracting");
       analyzeButton.disabled = true;
       uploadedCvs = [];
 
@@ -807,7 +858,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           console.log(`--- DEBUG: Extracted text from ${file.name} ---`);
           console.log(rawText);
 
-          showLoading(uploadStatus, `Parsing ${file.name} into sections...`);
+          showLoading(uploadStatus, null, `${getStatusText('parsing')} (${file.name})`);
           const structuredSections = await parseCvIntoStructuredSections(rawText);
           
           console.log(`--- DEBUG: Parsed sections for ${file.name} ---`);
@@ -867,17 +918,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         lastProcessedFileNames = files.map(f => f.name);
         
         openCvModal(cvResultsForModal, 0);
-        updateStatus(uploadStatus, `Parsed ${files.length} CV(s). Review and submit.`);
+        updateStatus(uploadStatus, "success");
         
         // Don't clear file input here - keep it until submission
         // It will be cleared in the submit handler
       } catch (err) {
         console.error("Analysis Error:", err);
-        updateStatus(
-          uploadStatus,
-          `Failed to analyze CVs. Error: ${err.message}`,
-          true
-        );
+        updateStatus(uploadStatus, "error", true);
         // Clear file input on error so user must select again
         if (fileInput) fileInput.value = "";
         uploadedCvs = [];
@@ -981,7 +1028,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Get current rules from UI (always use fresh UI state)
       const rules = getRulesFromUI();
 
-      showLoading(rulesStatus, "Generating recommendations...");
+      showLoading(rulesStatus, "generating"); // Use key
       startRecommendingBtn.disabled = true;
 
       try {
@@ -1013,7 +1060,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           currentLang
         );
 
-        updateStatus(rulesStatus, "Recommendations generated successfully!");
+        updateStatus(rulesStatus, "genSuccess"); // Use key
         setTimeout(() => {
   if (resultsSection) {
     resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1090,5 +1137,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 });
+
 
 
