@@ -3,6 +3,7 @@
 
 import {
   GEMINI_PROXY_URL,
+  getFinalCertificateCatalog,
 } from "./constants.js";
 
 import {
@@ -102,13 +103,9 @@ export function hideTypingIndicator() {
 // ---------------------------------------------------------------------------
 // Chat context builders
 // ---------------------------------------------------------------------------
-export function buildChatSystemPrompt(uploadedCvs,language = 'en') {
+export function buildChatSystemPrompt(uploadedCvs) {
   const catalogString = getCatalogAsPromptString();
   const hasCvContext = uploadedCvs.length > 0;
-  // Add Arabic instruction if needed
-  const langInstruction = language === 'ar' 
-    ? "IMPORTANT: You MUST answer strictly in Arabic. Explain technical terms in Arabic, but keep specific Certification Names in English as they appear in the catalog."
-    : "";
   const cvContext = hasCvContext
     ? `\n\n**Available CV Context:**\nThe user has uploaded ${uploadedCvs.length} CV(s). You can reference their experience, skills, and background when making recommendations.`
     : `\n\n**Note:** The user has not uploaded a CV yet. You can still answer general questions about certifications, but for personalized recommendations, encourage them to upload their CV.`;
@@ -117,7 +114,6 @@ export function buildChatSystemPrompt(uploadedCvs,language = 'en') {
 
 **Available Certifications Catalog:**
 ${catalogString}
-${langInstruction}
 ${cvContext}
 
 When recommending certifications, always:
@@ -284,8 +280,8 @@ Remember:
 // ---------------------------------------------------------------------------
 export function buildAnalysisPromptForCvs(cvArray, rulesArray, language = 'en') {
   const catalogString = getCatalogAsPromptString();
-  // Add Arabic instruction
-  const langInstruction = language === 'ar'
+  // Add Arabic instruction if needed
+  const langInstruction = language === 'ar' 
     ? "Output the 'reason' field strictly in Arabic. Keep 'candidateName' and 'certName' in their original text."
     : "Output the 'reason' field in English.";
   return `
@@ -397,9 +393,26 @@ export function displayRecommendations(recommendations, containerEl, resultsSect
       const candidateDiv = document.createElement("div");
       candidateDiv.className = "candidate-result";
 
+      // CV name (if available)
+      if (candidate.cvName) {
+        const cvNameDiv = document.createElement("div");
+        cvNameDiv.className = "candidate-cv-name";
+        cvNameDiv.textContent = candidate.cvName;
+        candidateDiv.appendChild(cvNameDiv);
+      }
+
       const nameDiv = document.createElement("h3");
       nameDiv.className = "candidate-name";
-      nameDiv.textContent = candidate.candidateName || "Candidate";
+      const rawName = candidate.candidateName || "Candidate";
+      // Avoid duplicate filename/title: if same as cvName, show a generic label
+      if (
+        candidate.cvName &&
+        rawName.toLowerCase().trim() === candidate.cvName.toLowerCase().trim()
+      ) {
+        nameDiv.textContent = "Candidate";
+      } else {
+        nameDiv.textContent = rawName;
+      }
       candidateDiv.appendChild(nameDiv);
 
       if (candidate.recommendations && candidate.recommendations.length > 0) {
@@ -412,7 +425,7 @@ export function displayRecommendations(recommendations, containerEl, resultsSect
           const card = document.createElement("div");
           card.className = "recommendation-card";
           card.innerHTML = `
-            <div class="recommendation-title">${rec.certName}</div>
+            <div class="recommendation-title">${displayName}</div>
             <div class="recommendation-reason">
               <i class="fas fa-lightbulb"></i> ${rec.reason}
             </div>

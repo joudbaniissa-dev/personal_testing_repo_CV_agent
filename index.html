@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
   <meta charset="UTF-8" />
+  <meta name="google" content="notranslate" />
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1.0"
@@ -74,9 +75,11 @@
 
       <!-- Side panel -->
       <aside class="side-panel">
-        <!-- Upload CVs Section - INTEGRATED VERSION -->
-        <section class="panel-section card upload-section">
+        <!-- MERGED: Upload CVs & Business Rules Section -->
+        <section class="panel-section card merged-section">
           <h3><i class="fas fa-file-upload"></i> Upload CVs</h3>
+          
+          <!-- Upload Area -->
           <div id="cv-upload-area" class="file-upload-area" tabindex="0">
             <i class="fas fa-cloud-upload-alt fa-2x"></i>
             <p class="muted">Drag & drop CV files here or click to browse</p>
@@ -84,32 +87,38 @@
             <!-- Status overlay inside upload area -->
             <div id="upload-status"></div>
           </div>
-          <button id="analyze-button" class="primary action-full"><i class="fas fa-brain"></i> Analyze CVs</button>
-          <div id="submitted-cv-bubbles" class="submitted-cv-bubbles" aria-live="polite"></div>
-        </section>
-    
-        <!-- Business Rules Section - INTEGRATED VERSION (Your Dynamic UI) -->
-        <section class="panel-section card rules-section">
-          <h3><i class="fas fa-gavel"></i> Business Rules</h3>
-          <!-- Dynamic rules container with status overlay -->
+          
+          <!-- Divider -->
+          <div class="section-divider"></div>
+          
+          <!-- Business Rules Label with Optional -->
+          <h3 class="rules-label">
+            <i class="fas fa-gavel"></i> Business Rules
+            <span class="optional-tag">Optional</span>
+          </h3>
+          
+          <!-- Rules Container -->
           <div id="rules-container" class="rules-container">
             <!-- Rules inputs will be dynamically added here -->
             <!-- Status overlay inside rules container -->
             <div id="rules-status"></div>
           </div>
+          
           <!-- Add Rule button -->
           <button id="add-rule-btn" type="button" class="add-rule-btn">
-            <i class="fas fa-plus"></i> Add
+            <i class="fas fa-plus"></i> Add Rule
           </button>
-          <!-- Action buttons -->
-          <div class="rules-actions">
-            <button id="admit-rules-btn" class="primary action-half">
-              <i class="fas fa-check"></i> Save Rules
-            </button>
-            <button id="start-recommending-btn" class="primary action-half" disabled>
-              <i class="fas fa-star"></i> Generate recommendations
-            </button>
-          </div>
+          
+          <!-- Single Generate Recommendations Button -->
+          <button id="generate-recommendations-btn" class="primary action-full" disabled>
+            <i class="fas fa-star"></i> Generate Recommendations
+          </button>
+        </section>
+
+        <!-- Uploaded CVs Section -->
+        <section class="panel-section card uploaded-cvs-section">
+          <h3><i class="fas fa-folder-open"></i> Uploaded CVs</h3>
+          <div id="submitted-cv-bubbles" class="submitted-cv-bubbles" aria-live="polite"></div>
         </section>
       </aside>
     </div>
@@ -147,7 +156,6 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
   <!-- Config (injects GEMINI_API_KEY into window.GEMINI_API_KEY) -->
-  <!-- You can implement this however you like; see README for details. -->
   <script src="config.js"></script>
 
   <!-- Main Application JavaScript - Team's modular structure -->

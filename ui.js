@@ -3,9 +3,9 @@
 
 import {
   DEFAULT_RULES,
-  DEFAULT_RULES_EN, // <--- Add this
-  DEFAULT_RULES_AR, // <--- Add this
-  getDefaultRules, // <--- Add this
+  DEFAULT_RULES_EN,
+  DEFAULT_RULES_AR,
+  getDefaultRules,
 } from "./constants.js";
 
 import {
@@ -33,8 +33,6 @@ import {
   displayRecommendations,
   callGeminiAPI,
 } from "./ai.js";
-
-
 
 // --- TRANSLATIONS FOR DYNAMIC UI ---
 const UI_TEXT = {
@@ -73,6 +71,7 @@ const UI_TEXT = {
     submitAll: "إرسال جميع السير الذاتية"
   }
 };
+
 // --- TRANSLATIONS FOR STATUS MESSAGES ---
 const STATUS_MESSAGES = {
   en: {
@@ -105,17 +104,16 @@ function getStatusText(key) {
   const lang = document.documentElement.lang === 'ar' ? 'ar' : 'en';
   return STATUS_MESSAGES[lang][key] || STATUS_MESSAGES['en'][key];
 }
+
 function getUiText(key) {
   const lang = document.documentElement.lang === 'ar' ? 'ar' : 'en';
   return UI_TEXT[lang][key] || UI_TEXT['en'][key];
 }
+
 // ===========================================================================
-// INTEGRATED: Dynamic Business Rules UI Functions (from your code)
+// Dynamic Business Rules UI Functions
 // ===========================================================================
 
-/**
- * Create a single rule input field with delete button
- */
 function createRuleInput(ruleText = "") {
   const wrapper = document.createElement("div");
   wrapper.className = "rule-input-wrapper";
@@ -134,7 +132,6 @@ function createRuleInput(ruleText = "") {
   
   deleteBtn.addEventListener("click", (e) => {
     e.preventDefault();
-    // Allow deleting all rules (no minimum check)
     wrapper.remove();
   });
 
@@ -143,14 +140,10 @@ function createRuleInput(ruleText = "") {
   return wrapper;
 }
 
-/**
- * Initialize the rules container with default or saved rules
- */
 function initializeRulesUI(rules) {
   const container = document.getElementById("rules-container");
   if (!container) return;
 
-  // Clear existing content except status overlay
   const statusOverlay = container.querySelector("#rules-status");
   container.innerHTML = "";
   if (statusOverlay) {
@@ -162,14 +155,10 @@ function initializeRulesUI(rules) {
       container.appendChild(createRuleInput(rule));
     });
   } else {
-    // Start with one empty input
     container.appendChild(createRuleInput());
   }
 }
 
-/**
- * Get all rules from the UI inputs
- */
 function getRulesFromUI() {
   const container = document.getElementById("rules-container");
   if (!container) return [];
@@ -185,14 +174,20 @@ function getRulesFromUI() {
   return rules;
 }
 
-/**
- * Enable/disable Start Recommending button based on CV upload status
- */
-function updateStartRecommendingButton(uploadedCvs) {
-  const startBtn = document.getElementById("start-recommending-btn");
-  if (startBtn) {
-    startBtn.disabled = uploadedCvs.length === 0;
+function updateGenerateButton(uploadedCvs) {
+  const generateBtn = document.getElementById("generate-recommendations-btn");
+  const fileInput = document.getElementById("file-input");
+  if (generateBtn) {
+    // Enable if files are selected OR if there are uploaded CVs
+    const hasFiles = fileInput && fileInput.files && fileInput.files.length > 0;
+    const hasCvs = uploadedCvs.length > 0;
+    generateBtn.disabled = !hasFiles && !hasCvs;
   }
+}
+
+// Alias for consistency with test folder naming
+function updateStartRecommendingButton(uploadedCvs, submittedCvDataParam) {
+  updateGenerateButton(uploadedCvs, submittedCvDataParam);
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +195,6 @@ function updateStartRecommendingButton(uploadedCvs) {
 // ---------------------------------------------------------------------------
 function updateStatus(element, messageKey, isError = false, rawText = null) {
   if (!element) return;
-  // Use key to find translation, or fallback to rawText if provided (for filenames)
   const text = rawText || getStatusText(messageKey) || messageKey;
   
   element.innerHTML = `
@@ -239,7 +233,6 @@ function clearChatHistoryDom() {
 function formatDescriptionAsBullets(text) {
   if (!text) return "";
 
-  // Normalize line breaks and insert breaks after periods to isolate sentences
   const withBreaks = text.replace(/\r/g, "").replace(/\.\s+/g, ".\n");
 
   const sentences = [];
@@ -379,7 +372,6 @@ function renderCvDetails(cv) {
   if (!container) return;
   container.innerHTML = "";
 
-  // Get text for current language
   const t = (k) => getUiText(k);
 
   const sections = [
@@ -542,7 +534,6 @@ function openCvModal(allCvResults, initialIndex = 0) {
   modalCvData = deepClone(allCvResults || []);
   activeCvIndex = initialIndex;
 
-  // Center the modal using flex; matches CSS that expects flex display
   modal.style.display = "flex";
   modal.removeAttribute("hidden");
   tabs.innerHTML = "";
@@ -556,7 +547,6 @@ function openCvModal(allCvResults, initialIndex = 0) {
     if (index === initialIndex) tab.classList.add("active");
 
     tab.addEventListener("click", () => {
-      // Before switching, save current tab edits
       syncActiveCvFromDom();
       document
         .querySelectorAll(".cv-tab")
@@ -571,7 +561,6 @@ function openCvModal(allCvResults, initialIndex = 0) {
 
   renderCvDetails(modalCvData[initialIndex] || modalCvData[0]);
 
-  // Dynamic submit label
   if (submitBtn) {
     submitBtn.textContent = modalCvData.length > 1 ? getUiText("submitAll") : getUiText("submitSingle");
   }
@@ -581,24 +570,112 @@ function openCvModal(allCvResults, initialIndex = 0) {
 // Main bootstrap
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
-  // 1. Detect language
   const currentLang = document.documentElement.lang || 'en';
   let chatHistory = [];
   let userRules = loadUserRules();
   let uploadedCvs = [];
   let lastRecommendations = loadLastRecommendations();
-  let submittedCvData = [];
-  let lastProcessedFileNames = []; // Track last processed file names
+  // Store recommendations per CV name
+  let allRecommendationsMap = {};
+  
+  // Initialize map from saved recommendations if they exist
+  if (lastRecommendations && lastRecommendations.candidates) {
+    lastRecommendations.candidates.forEach((candidate) => {
+      if (candidate.candidateName) {
+        allRecommendationsMap[candidate.candidateName] = {
+          candidateName: candidate.candidateName,
+          cvName: candidate.cvName || candidate.candidateName,
+          recommendations: candidate.recommendations || []
+        };
+      }
+    });
+  }
 
-  // Load catalog (async - loads from JSON file)
+  let submittedCvData = [];
+  let lastProcessedFileNames = [];
+
+  // Helper: merge recommendations into map and display
+  function applyRecommendationsToUi(recommendations, cvArray = uploadedCvs) {
+    // Only show recommendations for the current uploaded CVs
+    const currentCvNames = new Set((cvArray || []).map(cv => cv.name));
+    allRecommendationsMap = {};
+
+    if (recommendations && recommendations.candidates) {
+      recommendations.candidates.forEach((candidate, index) => {
+        // Prefer matching by index; fallback to name matching
+        const cvFromIndex = cvArray && cvArray[index] ? cvArray[index] : null;
+        const matchedByName = cvArray?.find(cv =>
+          cv.name === candidate.candidateName ||
+          candidate.candidateName === cv.name
+        );
+        const matchedCv = cvFromIndex || matchedByName;
+        const cvName = matchedCv?.name || candidate.candidateName;
+
+        if (!currentCvNames.has(cvName)) return; // skip stale CVs
+
+        // Derive career title from structured data if available
+        const structured = matchedCv?.structured || matchedCv;
+        const inferredTitle =
+          (structured?.experience && structured.experience[0]?.jobTitle) ||
+          structured?.title ||
+          "Candidate";
+
+        allRecommendationsMap[cvName] = {
+          candidateName: inferredTitle,
+          cvName,
+          recommendations: candidate.recommendations || []
+        };
+      });
+    }
+
+    const allRecommendations = {
+      candidates: Object.values(allRecommendationsMap)
+    };
+
+    lastRecommendations = allRecommendations;
+    saveLastRecommendations(allRecommendations);
+
+    displayRecommendations(
+      allRecommendations,
+      recommendationsContainer,
+      resultsSection,
+      currentLang
+    );
+  }
+
+  // Helper: rebuild a text blob from structured CV (fallback when raw text not present)
+  function buildTextFromStructured(cv) {
+    const parts = [];
+    (cv.experience || []).forEach(exp => {
+      parts.push(`Experience: ${exp.jobTitle || ""} at ${exp.company || ""} (${exp.years || exp.duration || ""}) - ${exp.description || ""}`);
+    });
+    (cv.education || []).forEach(edu => {
+      parts.push(`Education: ${edu.degreeField || edu.degree || ""} at ${edu.school || ""}`);
+    });
+    (cv.certifications || []).forEach(cert => {
+      parts.push(`Certification: ${cert.title || ""}`);
+    });
+    (cv.skills || []).forEach(skill => {
+      parts.push(`Skill: ${skill.title || skill}`);
+    });
+    return parts.join("\n");
+  }
+
+  // Helper: ensure CV objects include text and structured fields
+  function normalizeCvArray(cvArray) {
+    return (cvArray || []).map((cv) => ({
+      name: cv.name,
+      text: cv.text || buildTextFromStructured(cv),
+      structured: cv.structured || cv,
+    }));
+  }
+
   await loadCertificateCatalog();
 
-  // DOM elements
   const userInput = document.getElementById("user-input");
   const sendButton = document.getElementById("send-button");
 
   const fileInput = document.getElementById("file-input");
-  const analyzeButton = document.getElementById("analyze-button");
   const cvUploadArea = document.getElementById("cv-upload-area");
 
   const uploadStatus = document.getElementById("upload-status");
@@ -633,9 +710,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       deleteBtn.className = "delete-bubble-btn";
       deleteBtn.textContent = "×";
       deleteBtn.title = "Remove this CV";
-      deleteBtn.addEventListener("click", (e) => {
+      deleteBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
+        const cvToRemove = submittedCvData[idx];
         submittedCvData = submittedCvData.filter((_, i) => i !== idx);
+        // Remove recommendations for deleted CV
+        if (cvToRemove && cvToRemove.name && allRecommendationsMap[cvToRemove.name]) {
+          delete allRecommendationsMap[cvToRemove.name];
+          // Refresh recommendations display
+          const allRecommendations = {
+            candidates: Object.values(allRecommendationsMap)
+          };
+          if (recommendationsContainer && resultsSection) {
+            displayRecommendations(
+              allRecommendations,
+              recommendationsContainer,
+              resultsSection,
+              currentLang
+            );
+          }
+        }
         renderSubmittedCvBubbles(submittedCvData);
       });
 
@@ -643,9 +737,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       bubble.appendChild(metaEl);
       bubble.appendChild(deleteBtn);
 
-      // Clicking the bubble re-opens the modal with that CV's extracted data
       bubble.addEventListener("click", () => {
-        // Re-open modal with all submitted CVs and focus this one
         openCvModal(submittedCvData, idx);
       });
 
@@ -653,39 +745,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   };
 
-  // INTEGRATED: Dynamic Rules UI elements
   const addRuleBtn = document.getElementById("add-rule-btn");
-  const admitRulesBtn = document.getElementById("admit-rules-btn");
-  const startRecommendingBtn = document.getElementById("start-recommending-btn");
+  const generateBtn = document.getElementById("generate-recommendations-btn");
 
-  // --- INTEGRATED: Smart Rules Initialization ---
+  // ALWAYS use default rules on page load/refresh
   const defaultRulesForLang = getDefaultRules(currentLang);
   
-  // Helper to check if arrays are equal
-  const areRulesEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // Initialize UI with default rules (ignore localStorage)
+  initializeRulesUI(defaultRulesForLang);
+  userRules = [...defaultRulesForLang];
+  
+  // Save default rules to localStorage
+  saveUserRules(userRules);
 
-  let rulesToDisplay = userRules;
-
-  // 1. If we are in Arabic, but rules are the English Defaults -> Switch to Arabic Defaults
-  if (currentLang === 'ar' && areRulesEqual(userRules, DEFAULT_RULES_EN)) {
-    rulesToDisplay = DEFAULT_RULES_AR;
-  }
-  // 2. If we are in English, but rules are the Arabic Defaults -> Switch to English Defaults
-  else if (currentLang === 'en' && areRulesEqual(userRules, DEFAULT_RULES_AR)) {
-    rulesToDisplay = DEFAULT_RULES_EN;
-  }
-  // 3. If empty, use current language defaults
-  else if (!userRules || userRules.length === 0) {
-    rulesToDisplay = defaultRulesForLang;
-  }
-
-  // Initialize UI
-  initializeRulesUI(rulesToDisplay);
-  userRules = [...rulesToDisplay];
-
-  // Clear chat history in UI but keep stored messages if desired
   clearChatHistoryDom();
-  // Clear stored chat so each page load starts fresh
   saveChatHistory([]);
 
   // Chat handler
@@ -703,12 +776,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     showTypingIndicator();
 
     try {
-      const enhancedSystemPrompt = buildChatSystemPrompt(uploadedCvs, currentLang);
+      // Use submittedCvData if available, otherwise use uploadedCvs
+      const cvArrayForChat = submittedCvData.length > 0 ? submittedCvData : uploadedCvs;
+      const normalizedCvsForChat = normalizeCvArray(cvArrayForChat);
+      
+      const enhancedSystemPrompt = buildChatSystemPrompt(normalizedCvsForChat, currentLang);
 
-      // CV context snippet
       let enhancedMessage = message;
       if (
-        uploadedCvs.length > 0 &&
+        normalizedCvsForChat.length > 0 &&
         (message.toLowerCase().includes("my") ||
           message.toLowerCase().includes("i have") ||
           message.toLowerCase().includes("i am") ||
@@ -717,7 +793,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           message.toLowerCase().includes("certification") ||
           message.toLowerCase().includes("recommend"))
       ) {
-        const cvSummary = uploadedCvs
+        const cvSummary = normalizedCvsForChat
           .map((cv) => {
             const structured = cv.structured || {};
             const skills = (structured.skills || []).slice(0, 10).join(", ");
@@ -735,11 +811,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           .join("\n");
 
         enhancedMessage = `${message}\n\n[Context: ${
-          uploadedCvs.length
+          normalizedCvsForChat.length
         } CV(s) available. Summary: ${cvSummary}]`;
       }
 
-      // Add rules + last recommendations context
       enhancedMessage = buildChatContextMessage(
         enhancedMessage,
         userRules,
@@ -794,6 +869,12 @@ document.addEventListener("DOMContentLoaded", async () => {
           uploadStatus,
           `Selected ${files.length} file(s): ${files.map((f) => f.name).join(", ")}`
         );
+        
+        // ENABLE BUTTON IMMEDIATELY ON DRAG & DROP
+        const generateBtn = document.getElementById("generate-recommendations-btn");
+        if (generateBtn) {
+          generateBtn.disabled = false;
+        }
       }
     });
   }
@@ -812,224 +893,206 @@ document.addEventListener("DOMContentLoaded", async () => {
           uploadStatus,
           `Selected ${files.length} file(s): ${files.map((f) => f.name).join(", ")}`
         );
+        // Enable button when files are selected (button will analyze on click)
+        const generateBtn = document.getElementById("generate-recommendations-btn");
+        if (generateBtn) {
+          generateBtn.disabled = false;
+        }
       } else if (uploadStatus) {
         uploadStatus.innerHTML = "";
         // File input cleared - clear last processed names
         lastProcessedFileNames = [];
+        // Disable button if no files and no submitted CVs
+        updateGenerateButton(uploadedCvs);
       }
     });
   }
 
-  // Analyze CVs
-  if (analyzeButton) {
-    analyzeButton.addEventListener("click", async () => {
-      // Check if file input has any files selected (check both value and files)
-      if (!fileInput || !fileInput.files || fileInput.files.length === 0 || !fileInput.value) {
-        // No new files selected – do not reuse previous uploads
-        uploadedCvs = [];
-        updateStartRecommendingButton(uploadedCvs);
-        // Ensure file input is cleared
-        if (fileInput) fileInput.value = "";
-        updateStatus(uploadStatus, "selectFile", true);
-        return;
-      }
-      
-      const files = Array.from(fileInput.files);
-      const currentFileNames = files.map(f => f.name).sort().join(',');
-      
-      // Check if these are the same files we just processed and submitted
-      if (lastProcessedFileNames.length > 0 && 
-          currentFileNames === lastProcessedFileNames.sort().join(',')) {
-        // Same files as before - user needs to select new files
-        uploadedCvs = [];
-        updateStartRecommendingButton(uploadedCvs);
-        updateStatus(uploadStatus, "selectFile", true);
-        return;
-      }
-
-      showLoading(uploadStatus, "extracting");
-      analyzeButton.disabled = true;
-      uploadedCvs = [];
-
-      try {
-        // Extract and parse
-        for (const file of files) {
-          const rawText = await extractTextFromFile(file);
-          console.log(`--- DEBUG: Extracted text from ${file.name} ---`);
-          console.log(rawText);
-
-          showLoading(uploadStatus, null, `${getStatusText('parsing')} (${file.name})`);
-          const structuredSections = await parseCvIntoStructuredSections(rawText);
-          
-          console.log(`--- DEBUG: Parsed sections for ${file.name} ---`);
-          console.log(structuredSections);
-
-          uploadedCvs.push({
-            name: file.name,
-            text: rawText,
-            structured: structuredSections,
-          });
-        }
-
-        console.log("--- All parsed CVs ready for frontend ---");
-        console.log(uploadedCvs);
-
-        // INTEGRATED: Enable Start Recommending button
-        updateStartRecommendingButton(uploadedCvs);
-
-        // Transform uploadedCvs to the format expected by the modal (rich view)
-        const cvResultsForModal = uploadedCvs.map((cv) => {
-          const s = cv.structured || {};
-          const totalYearsExperience = calculateTotalExperience(s.experience || []);
-          return {
-            name: cv.name,
-            totalYearsExperience,
-            experience: (s.experience || []).map((exp) => {
-              const period = exp.period || exp.years || "";
-              return {
-                jobTitle: exp.jobTitle || exp.title || "",
-                company: exp.company || exp.companyName || "",
-                description: exp.description || "",
-                years: period,
-                duration: calculateYearsFromPeriod(period),
-              };
-            }),
-            education: (s.education || []).map((edu) => ({
-              degreeField:
-                (edu.degree || edu.title || "")
-                  ? `${edu.degree || edu.title || ""}${
-                      edu.major ? " in " + edu.major : ""
-                    }`.trim()
-                  : edu.major || "",
-              school: edu.school || edu.institution || "",
-            })),
-            certifications: (s.certifications || []).map((cert) => ({
-              title: `${cert.title || ""}${
-                cert.issuer ? " - " + cert.issuer : ""
-              }${cert.year ? " (" + cert.year + ")" : ""}`,
-            })),
-            skills: (s.skills || []).map((skill) => ({
-              title: typeof skill === "string" ? skill : skill.title || "",
-            })),
-          };
-        });
-
-        // Save processed file names to prevent reprocessing
-        lastProcessedFileNames = files.map(f => f.name);
-        
-        openCvModal(cvResultsForModal, 0);
-        updateStatus(uploadStatus, "success");
-        
-        // Don't clear file input here - keep it until submission
-        // It will be cleared in the submit handler
-      } catch (err) {
-        console.error("Analysis Error:", err);
-        updateStatus(uploadStatus, "error", true);
-        // Clear file input on error so user must select again
-        if (fileInput) fileInput.value = "";
-        uploadedCvs = [];
-        updateStartRecommendingButton(uploadedCvs);
-      } finally {
-        hideLoading(uploadStatus);
-        analyzeButton.disabled = false;
-      }
-    });
-  }
-
-  // ===========================================================================
-  // INTEGRATED: Dynamic Business Rules UI Event Handlers
-  // ===========================================================================
-
-  // Add Rule button - Creates new empty input field
+  // Add Rule button
   if (addRuleBtn) {
     addRuleBtn.addEventListener("click", (e) => {
       e.preventDefault();
       const container = document.getElementById("rules-container");
       if (container) {
         const newInput = createRuleInput();
-        // Insert before status overlay if it exists
         const statusOverlay = container.querySelector("#rules-status");
         if (statusOverlay) {
           container.insertBefore(newInput, statusOverlay);
         } else {
           container.appendChild(newInput);
         }
-        // Focus on the new input
         const input = newInput.querySelector('input');
         if (input) input.focus();
       }
     });
   }
 
-  // Admit Rules button - Saves and parses rules
-  if (admitRulesBtn) {
-    admitRulesBtn.addEventListener("click", async () => {
-      const rules = getRulesFromUI();
-      
-      // Allow empty rules (user deleted all)
-      if (rules.length === 0) {
-        userRules = [];
-        saveUserRules(userRules);
-        updateStatus(
-          rulesStatus,
-          "All rules cleared. AI will use its own reasoning for recommendations."
-        );
-        addMessage(
-          "I've cleared all business rules. I'll now use my own judgment when making recommendations.",
-          false
-        );
-        return;
-      }
+  // Shared CV rendering helper
+  const upsertAndRenderSubmittedCvs = (cvResultsForModal) => {
+    if (!cvResultsForModal || !cvResultsForModal.length) return;
+    submittedCvData = upsertByName(submittedCvData, cvResultsForModal);
+    renderSubmittedCvBubbles(submittedCvData);
+  };
 
-      showLoading(rulesStatus, "Parsing rules with AI...");
-      admitRulesBtn.disabled = true;
-
-      try {
-        // Convert rules array to text for AI parsing
-        const rulesText = rules.join("\n");
-        const parsedRules = await parseAndApplyRules(rulesText);
-        userRules = parsedRules;
-        saveUserRules(userRules);
-        updateStatus(
-          rulesStatus,
-          `Successfully parsed and applied ${parsedRules.length} rules.`
-        );
-        addMessage(
-          "I've updated my recommendation logic based on your new rules.",
-          false
-        );
-      } catch (err) {
-        console.error("Rule Parsing Error:", err);
-        updateStatus(
-          rulesStatus,
-          `Failed to parse rules. Error: ${err.message}`,
-          true
-        );
-      } finally {
-        hideLoading(rulesStatus);
-        admitRulesBtn.disabled = false;
+  // Helper to show/hide loading on button
+  function setButtonLoading(button, isLoading) {
+    if (!button) return;
+    if (isLoading) {
+      button.disabled = true;
+      button.classList.add('loading');
+      const originalHTML = button.innerHTML;
+      button.dataset.originalHTML = originalHTML;
+      // Replace content with spinner only
+      button.innerHTML = '<span class="loader"></span>';
+    } else {
+      button.disabled = false;
+      button.classList.remove('loading');
+      if (button.dataset.originalHTML) {
+        button.innerHTML = button.dataset.originalHTML;
+        delete button.dataset.originalHTML;
       }
-    });
+    }
   }
 
-  // Start Recommending button - Generates recommendations
-  if (startRecommendingBtn) {
-    startRecommendingBtn.addEventListener("click", async () => {
-      // Check if CVs are uploaded
-      if (uploadedCvs.length === 0) {
-        updateStatus(
-          rulesStatus,
-          "Please upload and analyze CVs first.",
-          true
-        );
-        return;
+  // Extract+parse helper reused by Generate button
+  // Extract+parse helper reused by Generate button
+  async function runCvAnalysis({ statusElement = uploadStatus, openModal = true, suppressStatus = false } = {}) {
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0 || !fileInput.value) {
+      uploadedCvs = [];
+      updateGenerateButton(uploadedCvs);
+      if (fileInput) fileInput.value = "";
+      if (!suppressStatus && statusElement) {
+        updateStatus(statusElement, "selectFile", true);
+      }
+      throw new Error("No files selected");
+    }
+
+    const files = Array.from(fileInput.files);
+
+    if (!suppressStatus && statusElement) {
+      // Generic "extracting" message for all files
+      showLoading(statusElement, "extracting");
+    }
+    
+    uploadedCvs = [];
+
+    try {
+      // === PARALLEL PROCESSING START ===
+      // Map each file to a Promise (task) that runs immediately
+      const processingPromises = files.map(async (file) => {
+        // 1. Extract Text
+        const rawText = await extractTextFromFile(file);
+        
+        // 2. Parse with AI
+        // Note: We removed the per-file status update here because in parallel mode
+        // they would flash too quickly or overwrite each other randomly.
+        const structuredSections = await parseCvIntoStructuredSections(rawText);
+
+        return {
+          name: file.name,
+          text: rawText,
+          structured: structuredSections,
+        };
+      });
+
+      // Wait for ALL files to finish simultaneously
+      uploadedCvs = await Promise.all(processingPromises);
+      // === PARALLEL PROCESSING END ===
+
+      updateGenerateButton(uploadedCvs);
+
+      const cvResultsForModal = uploadedCvs.map((cv) => {
+        const s = cv.structured || {};
+        const totalYearsExperience = calculateTotalExperience(s.experience || []);
+        return {
+          name: cv.name,
+          totalYearsExperience,
+          experience: (s.experience || []).map((exp) => {
+            const period = exp.period || exp.years || "";
+            return {
+              jobTitle: exp.jobTitle || exp.title || "",
+              company: exp.company || exp.companyName || "",
+              description: exp.description || "",
+              years: period,
+              duration: calculateYearsFromPeriod(period),
+            };
+          }),
+          education: (s.education || []).map((edu) => ({
+            degreeField:
+              (edu.degree || edu.title || "")
+                ? `${edu.degree || edu.title || ""}${
+                    edu.major ? " in " + edu.major : ""
+                  }`.trim()
+                : edu.major || "",
+            school: edu.school || edu.institution || "",
+          })),
+          certifications: (s.certifications || []).map((cert) => ({
+            title: `${cert.title || ""}${
+              cert.issuer ? " - " + cert.issuer : ""
+            }${cert.year ? " (" + cert.year + ")" : ""}`,
+          })),
+          skills: (s.skills || []).map((skill) => ({
+            title: typeof skill === "string" ? skill : skill.title || "",
+          })),
+        };
+      });
+
+      lastProcessedFileNames = files.map(f => f.name);
+
+      upsertAndRenderSubmittedCvs(cvResultsForModal);
+
+      if (openModal) {
+        openCvModal(cvResultsForModal, 0);
+      }
+
+      if (!suppressStatus && statusElement) {
+        updateStatus(statusElement, "success");
+      }
+      return { uploadedCvs, cvResultsForModal };
+    } catch (err) {
+      console.error("Analysis Error:", err);
+      if (!suppressStatus && statusElement) {
+        updateStatus(statusElement, "error", true);
+      }
+      if (fileInput) fileInput.value = "";
+      uploadedCvs = [];
+      updateGenerateButton(uploadedCvs);
+      throw err;
+    } finally {
+      if (!suppressStatus && statusElement) {
+        hideLoading(statusElement);
+      }
+    }
+  }
+
+  // Generate Recommendations button - Generates recommendations
+  if (generateBtn) {
+    generateBtn.addEventListener("click", async () => {
+      // Start loading animation immediately
+      setButtonLoading(generateBtn, true);
+
+      // Analyze current selected CVs before generating (only if files are selected)
+      let analysisResult = null;
+      const hasNewFiles = fileInput && fileInput.files && fileInput.files.length > 0;
+      if (hasNewFiles) {
+        try {
+          analysisResult = await runCvAnalysis({
+            statusElement: rulesStatus,
+            openModal: false,
+            suppressStatus: true
+          });
+          if (analysisResult && analysisResult.cvResultsForModal) {
+            submittedCvData = upsertByName(submittedCvData, analysisResult.cvResultsForModal);
+            renderSubmittedCvBubbles(submittedCvData);
+          }
+        } catch (err) {
+          setButtonLoading(generateBtn, false);
+          return;
+        }
       }
 
       // Get current rules from UI (always use fresh UI state)
       const rules = getRulesFromUI();
-
-      showLoading(rulesStatus, "generating"); // Use key
-      startRecommendingBtn.disabled = true;
 
       try {
         // ALWAYS update userRules based on current UI state
@@ -1045,28 +1108,30 @@ document.addEventListener("DOMContentLoaded", async () => {
           console.log("📝 No rules provided - AI will use its own reasoning");
         }
 
+        // Decide which CVs to generate for: prefer submitted data; else newly analyzed; else current uploadedCvs
+        const rawCvArrayForRec =
+          submittedCvData.length > 0
+            ? submittedCvData
+            : analysisResult?.uploadedCvs || uploadedCvs;
+
+        const cvArrayForRec = normalizeCvArray(rawCvArrayForRec);
+
+        if (!cvArrayForRec || cvArrayForRec.length === 0) {
+          throw new Error("No CVs available. Please upload or select CV files.");
+        }
+
         // Generate recommendations with current rules (empty array if no rules)
-        const recommendations = await analyzeCvsWithAI(uploadedCvs, userRules, currentLang);
+        const recommendations = await analyzeCvsWithAI(cvArrayForRec, userRules, currentLang);
 
-        // Persist recommendations for chat grounding
-        lastRecommendations = recommendations;
-        saveLastRecommendations(recommendations);
+        // Merge and display recommendations (matching by CV index)
+        applyRecommendationsToUi(recommendations, cvArrayForRec);
 
-        // Display recommendations
-        displayRecommendations(
-          recommendations,
-          recommendationsContainer,
-          resultsSection,
-          currentLang
-        );
-
-        updateStatus(rulesStatus, "genSuccess"); // Use key
         setTimeout(() => {
-  if (resultsSection) {
-    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    console.log('✅ Scrolled to recommendations section');
-  }
-}, 300);
+          if (resultsSection) {
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            console.log('✅ Scrolled to recommendations section');
+          }
+        }, 300);
       } catch (err) {
         console.error("Recommendation Error:", err);
         updateStatus(
@@ -1075,8 +1140,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           true
         );
       } finally {
-        hideLoading(rulesStatus);
-        startRecommendingBtn.disabled = uploadedCvs.length === 0;
+        setButtonLoading(generateBtn, false);
       }
     });
   }
@@ -1099,7 +1163,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ===========================================================================
   const submitCvReview = document.getElementById("submitCvReview");
   if (submitCvReview) {
-    submitCvReview.addEventListener("click", () => {
+    submitCvReview.addEventListener("click", async () => {
       // Save current tab edits back into modal state
       syncActiveCvFromDom();
       const allResults = deepClone(modalCvData);
@@ -1117,7 +1181,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       uploadedCvs = [];
       // Keep lastProcessedFileNames to prevent reprocessing same files
       // They will be cleared when new files are selected
-      updateStartRecommendingButton(uploadedCvs);
+      // Button should stay enabled since we have submitted CVs
+      const generateBtn = document.getElementById("generate-recommendations-btn");
+      if (generateBtn && submittedCvData.length > 0) {
+        generateBtn.disabled = false;
+      } else {
+        updateGenerateButton(uploadedCvs);
+      }
 
       // INTEGRATED: Close modal
       const modal = document.getElementById("cvModal");
@@ -1126,17 +1196,61 @@ document.addEventListener("DOMContentLoaded", async () => {
         console.log('✅ Modal closed');
       }
 
-      // Submit now only saves data; keep recommendations section hidden/reset
-      if (recommendationsContainer) {
-        recommendationsContainer.innerHTML = "";
-      }
-      if (resultsSection) {
-        resultsSection.classList.add("hidden");
-        resultsSection.style.display = "none";
+      // Regenerate recommendations with updated CV data
+      if (submittedCvData.length > 0) {
+        // Use the Generate Recommendations button loading animation
+        const generateBtn = document.getElementById("generate-recommendations-btn");
+        if (generateBtn) {
+          setButtonLoading(generateBtn, true);
+        }
+        
+        try {
+          // Get current rules from UI
+          const rules = getRulesFromUI();
+          
+          if (rules.length > 0) {
+            const rulesText = rules.join("\n");
+            userRules = await parseAndApplyRules(rulesText);
+            saveUserRules(userRules);
+          } else {
+            userRules = [];
+            saveUserRules(userRules);
+            console.log("📝 No rules provided - AI will use its own reasoning");
+          }
+
+          // Normalize submitted CV data for recommendations
+          const cvArrayForRec = normalizeCvArray(submittedCvData);
+
+          if (cvArrayForRec && cvArrayForRec.length > 0) {
+            // Generate recommendations with updated CV data
+            const recommendations = await analyzeCvsWithAI(cvArrayForRec, userRules, currentLang);
+
+            // Merge and display recommendations (matching by CV index)
+            applyRecommendationsToUi(recommendations, cvArrayForRec);
+
+            updateStatus(rulesStatus, "genSuccess");
+            
+            // Scroll to results
+            setTimeout(() => {
+              if (resultsSection) {
+                resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                console.log('✅ Scrolled to recommendations section');
+              }
+            }, 300);
+          }
+        } catch (err) {
+          console.error("Regeneration Error:", err);
+          updateStatus(
+            rulesStatus,
+            `Failed to regenerate recommendations. Error: ${err.message}`,
+            true
+          );
+        } finally {
+          if (generateBtn) {
+            setButtonLoading(generateBtn, false);
+          }
+        }
       }
     });
   }
 });
-
-
-
