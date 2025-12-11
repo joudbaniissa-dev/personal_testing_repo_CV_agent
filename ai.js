@@ -106,6 +106,8 @@ export function hideTypingIndicator() {
 export function buildChatSystemPrompt(uploadedCvs) {
   const catalogString = getCatalogAsPromptString();
   const hasCvContext = uploadedCvs.length > 0;
+  
+  // Safe handling if structured data is not yet parsed (isParsing=true)
   const cvContext = hasCvContext
     ? `\n\n**Available CV Context:**\nThe user has uploaded ${uploadedCvs.length} CV(s). You can reference their experience, skills, and background when making recommendations.`
     : `\n\n**Note:** The user has not uploaded a CV yet. You can still answer general questions about certifications, but for personalized recommendations, encourage them to upload their CV.`;
@@ -280,7 +282,6 @@ Remember:
 // ---------------------------------------------------------------------------
 export function buildAnalysisPromptForCvs(cvArray, rulesArray, language = 'en') {
   const catalogString = getCatalogAsPromptString();
-  // Add Arabic instruction if needed
   const langInstruction = language === 'ar' 
     ? "Output the 'reason' field strictly in Arabic. Keep 'candidateName' and 'certName' in their original text."
     : "Output the 'reason' field in English.";

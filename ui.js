@@ -75,11 +75,11 @@ const UI_TEXT = {
 // --- TRANSLATIONS FOR STATUS MESSAGES ---
 const STATUS_MESSAGES = {
   en: {
-    analyzing: "Analyzing CVs with AI...",
-    extracting: "Extracting text from CVs...",
+    analyzing: "Parsing details in background...",
+    extracting: "Reading files...",
     parsing: "Parsing CV into sections...",
-    success: "Analysis complete! Review and submit.",
-    error: "Failed to analyze CVs.",
+    success: "Files ready! You can generate recommendations now.",
+    error: "Failed to read files.",
     selectFile: "Please select at least one CV file.",
     generating: "Generating recommendations...",
     genSuccess: "Recommendations generated successfully!",
@@ -87,11 +87,11 @@ const STATUS_MESSAGES = {
     rulesCleared: "Rules cleared."
   },
   ar: {
-    analyzing: "جاري تحليل السير الذاتية بالذكاء الاصطناعي...",
-    extracting: "جاري استخراج النص من الملفات...",
+    analyzing: "جاري تحليل التفاصيل في الخلفية...",
+    extracting: "جاري قراءة الملفات...",
     parsing: "جاري تقسيم السيرة الذاتية إلى أقسام...",
-    success: "اكتمل التحليل! يرجى المراجعة والإرسال.",
-    error: "فشل في تحليل السير الذاتية.",
+    success: "الملفات جاهزة! يمكنك إصدار التوصيات الآن.",
+    error: "فشل في قراءة الملفات.",
     selectFile: "يرجى اختيار ملف سيرة ذاتية واحد على الأقل.",
     generating: "جاري إصدار التوصيات...",
     genSuccess: "تم إصدار التوصيات بنجاح!",
@@ -183,11 +183,6 @@ function updateGenerateButton(uploadedCvs) {
     const hasCvs = uploadedCvs.length > 0;
     generateBtn.disabled = !hasFiles && !hasCvs;
   }
-}
-
-// Alias for consistency with test folder naming
-function updateStartRecommendingButton(uploadedCvs, submittedCvDataParam) {
-  updateGenerateButton(uploadedCvs, submittedCvDataParam);
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +366,12 @@ function renderCvDetails(cv) {
   const container = document.getElementById("cvResultsContainer");
   if (!container) return;
   container.innerHTML = "";
+  
+  // Guard against null structured data (if opened while parsing)
+  if (!cv.structured && !cv.education) { // !cv.education check for backward compat
+      container.innerHTML = `<div class="status-message"><div class="loader"></div> Parsing detailed data... Please wait.</div>`;
+      return;
+  }
 
   const t = (k) => getUiText(k);
 
@@ -491,7 +492,7 @@ function deepClone(obj) {
 }
 
 function readCvFromDom(cv) {
-  if (!cv) return cv;
+  if (!cv || !cv.structured) return cv; // Guard if not structured yet
   const updated = deepClone(cv);
   ["experience", "education", "certifications", "skills"].forEach((sec) => {
     const list = document.getElementById(`${cv.name}_${sec}_list`);
@@ -520,6 +521,9 @@ function readCvFromDom(cv) {
 function syncActiveCvFromDom() {
   if (!modalCvData.length) return;
   const current = modalCvData[activeCvIndex];
+  // If parsing is still happening, don't try to read from DOM
+  if (current.isParsing) return;
+  
   const updated = readCvFromDom(current);
   modalCvData[activeCvIndex] = updated;
 }
@@ -531,7 +535,7 @@ function openCvModal(allCvResults, initialIndex = 0) {
   const submitBtn = document.getElementById("submitCvReview");
   if (!modal || !tabs || !content) return;
 
-  modalCvData = deepClone(allCvResults || []);
+  modalCvData = allCvResults; // Don't clone immediately to maintain reference to parsing objects
   activeCvIndex = initialIndex;
 
   modal.style.display = "flex";
@@ -700,10 +704,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const metaEl = document.createElement("span");
       metaEl.className = "bubble-meta";
-      const expCount = (cv.experience || []).length;
-      const eduCount = (cv.education || []).length;
-      const skillCount = (cv.skills || []).length;
-      metaEl.textContent = `Exp: ${expCount} | Edu: ${eduCount} | Skills: ${skillCount}`;
+      
+      // OPTIMIZATION: Show spinner if parsing, else show stats
+      if (cv.isParsing) {
+        metaEl.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Analyzing...`;
+      } else {
+        const expCount = (cv.experience || []).length;
+        const eduCount = (cv.education || []).length;
+        const skillCount = (cv.skills || []).length;
+        metaEl.textContent = `Exp: ${expCount} | Edu: ${eduCount} | Skills: ${skillCount}`;
+      }
 
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
@@ -731,6 +741,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         }
         renderSubmittedCvBubbles(submittedCvData);
+        // Disable button if no CVs left
+        const generateBtn = document.getElementById("generate-recommendations-btn");
+        if (generateBtn && submittedCvData.length === 0) {
+            generateBtn.disabled = true;
+        }
       });
 
       bubble.appendChild(nameEl);
@@ -881,29 +896,22 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (fileInput) {
     fileInput.addEventListener("change", () => {
-      uploadedCvs = [];
+      // uploadedCvs = []; // OPTIMIZATION: Don't clear immediately, let process handle it
       const files = Array.from(fileInput.files || []);
       if (files.length > 0) {
-        // New files selected - clear last processed names to allow processing
-        const newFileNames = files.map(f => f.name).sort().join(',');
-        if (newFileNames !== lastProcessedFileNames.sort().join(',')) {
-          lastProcessedFileNames = [];
-        }
         updateStatus(
           uploadStatus,
           `Selected ${files.length} file(s): ${files.map((f) => f.name).join(", ")}`
         );
-        // Enable button when files are selected (button will analyze on click)
-        const generateBtn = document.getElementById("generate-recommendations-btn");
-        if (generateBtn) {
-          generateBtn.disabled = false;
-        }
+        // Trigger processing immediately on file select
+        runFastFileProcessing();
       } else if (uploadStatus) {
         uploadStatus.innerHTML = "";
-        // File input cleared - clear last processed names
         lastProcessedFileNames = [];
-        // Disable button if no files and no submitted CVs
-        updateGenerateButton(uploadedCvs);
+        // Only disable if no submitted data exists
+        if (submittedCvData.length === 0) {
+           updateGenerateButton([]);
+        }
       }
     });
   }
@@ -954,116 +962,103 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  // Extract+parse helper reused by Generate button
-  // Extract+parse helper reused by Generate button
-  async function runCvAnalysis({ statusElement = uploadStatus, openModal = true, suppressStatus = false } = {}) {
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0 || !fileInput.value) {
-      uploadedCvs = [];
-      updateGenerateButton(uploadedCvs);
-      if (fileInput) fileInput.value = "";
-      if (!suppressStatus && statusElement) {
-        updateStatus(statusElement, "selectFile", true);
-      }
-      throw new Error("No files selected");
-    }
+  // --- OPTIMIZATION: Separate Extraction from Parsing ---
+
+  // 1. Fast Process: Extract Text, Update UI, Enable Button
+  async function runFastFileProcessing() {
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
 
     const files = Array.from(fileInput.files);
-
-    if (!suppressStatus && statusElement) {
-      // Generic "extracting" message for all files
-      showLoading(statusElement, "extracting");
-    }
-    
-    uploadedCvs = [];
+    showLoading(uploadStatus, "extracting");
 
     try {
-      // === PARALLEL PROCESSING START ===
-      // Map each file to a Promise (task) that runs immediately
-      const processingPromises = files.map(async (file) => {
-        // 1. Extract Text
-        const rawText = await extractTextFromFile(file);
-        
-        // 2. Parse with AI
-        // Note: We removed the per-file status update here because in parallel mode
-        // they would flash too quickly or overwrite each other randomly.
-        const structuredSections = await parseCvIntoStructuredSections(rawText);
-
-        return {
-          name: file.name,
-          text: rawText,
-          structured: structuredSections,
-        };
-      });
-
-      // Wait for ALL files to finish simultaneously
-      uploadedCvs = await Promise.all(processingPromises);
-      // === PARALLEL PROCESSING END ===
-
-      updateGenerateButton(uploadedCvs);
-
-      const cvResultsForModal = uploadedCvs.map((cv) => {
-        const s = cv.structured || {};
-        const totalYearsExperience = calculateTotalExperience(s.experience || []);
-        return {
-          name: cv.name,
-          totalYearsExperience,
-          experience: (s.experience || []).map((exp) => {
-            const period = exp.period || exp.years || "";
+        // Extract text in parallel
+        const extracted = await Promise.all(files.map(async (file) => {
+            const rawText = await extractTextFromFile(file);
             return {
-              jobTitle: exp.jobTitle || exp.title || "",
-              company: exp.company || exp.companyName || "",
-              description: exp.description || "",
-              years: period,
-              duration: calculateYearsFromPeriod(period),
+                name: file.name,
+                text: rawText,
+                structured: null, // Placeholder
+                isParsing: true // Flag to show spinner in bubbles
             };
-          }),
-          education: (s.education || []).map((edu) => ({
-            degreeField:
-              (edu.degree || edu.title || "")
-                ? `${edu.degree || edu.title || ""}${
-                    edu.major ? " in " + edu.major : ""
-                  }`.trim()
-                : edu.major || "",
-            school: edu.school || edu.institution || "",
-          })),
-          certifications: (s.certifications || []).map((cert) => ({
-            title: `${cert.title || ""}${
-              cert.issuer ? " - " + cert.issuer : ""
-            }${cert.year ? " (" + cert.year + ")" : ""}`,
-          })),
-          skills: (s.skills || []).map((skill) => ({
-            title: typeof skill === "string" ? skill : skill.title || "",
-          })),
-        };
-      });
+        }));
 
-      lastProcessedFileNames = files.map(f => f.name);
+        // Add to main state immediately
+        upsertAndRenderSubmittedCvs(extracted);
+        
+        // Clear input so user can add more
+        // fileInput.value = ""; // Optional: keep it or clear it depending on UX preference. Keeping it for now.
+        
+        // Show Success status for Upload (Extraction done)
+        updateStatus(uploadStatus, "success");
+        
+        // Enable Recommendation Generation Immediately
+        const generateBtn = document.getElementById("generate-recommendations-btn");
+        if (generateBtn) generateBtn.disabled = false;
 
-      upsertAndRenderSubmittedCvs(cvResultsForModal);
+        // Trigger Background Parsing (Fire and Forget)
+        runBackgroundParsing(extracted);
 
-      if (openModal) {
-        openCvModal(cvResultsForModal, 0);
-      }
-
-      if (!suppressStatus && statusElement) {
-        updateStatus(statusElement, "success");
-      }
-      return { uploadedCvs, cvResultsForModal };
     } catch (err) {
-      console.error("Analysis Error:", err);
-      if (!suppressStatus && statusElement) {
-        updateStatus(statusElement, "error", true);
-      }
-      if (fileInput) fileInput.value = "";
-      uploadedCvs = [];
-      updateGenerateButton(uploadedCvs);
-      throw err;
-    } finally {
-      if (!suppressStatus && statusElement) {
-        hideLoading(statusElement);
-      }
+        console.error("Extraction error:", err);
+        updateStatus(uploadStatus, "error", true);
     }
   }
+
+  // 2. Background Process: Parse structure one by one (or parallel) and update bubbles
+  async function runBackgroundParsing(cvsToParse) {
+      // We do this in parallel, but you could throttle if needed.
+      // Since we already have the text, we just call the AI parser.
+      
+      cvsToParse.forEach(async (cvRef) => {
+          try {
+              const structuredSections = await parseCvIntoStructuredSections(cvRef.text);
+              
+              // Map raw AI JSON to internal schema
+              const processed = {
+                  experience: (structuredSections.experience || []).map((exp) => {
+                      const period = exp.period || exp.years || "";
+                      return {
+                          jobTitle: exp.jobTitle || exp.title || "",
+                          company: exp.company || exp.companyName || "",
+                          description: exp.description || "",
+                          years: period,
+                          duration: calculateYearsFromPeriod(period),
+                      };
+                  }),
+                  education: (structuredSections.education || []).map((edu) => ({
+                      degreeField: (edu.degree || edu.title || "")
+                          ? `${edu.degree || edu.title || ""}${edu.major ? " in " + edu.major : ""}`.trim()
+                          : edu.major || "",
+                      school: edu.school || edu.institution || "",
+                  })),
+                  certifications: (structuredSections.certifications || []).map((cert) => ({
+                      title: `${cert.title || ""}${cert.issuer ? " - " + cert.issuer : ""}${cert.year ? " (" + cert.year + ")" : ""}`,
+                  })),
+                  skills: (structuredSections.skills || []).map((skill) => ({
+                      title: typeof skill === "string" ? skill : skill.title || "",
+                  })),
+              };
+
+              // Update the object in place (referenced in submittedCvData)
+              cvRef.experience = processed.experience;
+              cvRef.education = processed.education;
+              cvRef.certifications = processed.certifications;
+              cvRef.skills = processed.skills;
+              cvRef.structured = structuredSections; // Keep raw too
+              cvRef.isParsing = false;
+
+              // Refresh UI to show stats instead of spinner
+              renderSubmittedCvBubbles(submittedCvData);
+
+          } catch (err) {
+              console.error(`Background parsing failed for ${cvRef.name}`, err);
+              cvRef.isParsing = false; // Stop spinner even on error
+              renderSubmittedCvBubbles(submittedCvData);
+          }
+      });
+  }
+
 
   // Generate Recommendations button - Generates recommendations
   if (generateBtn) {
@@ -1071,25 +1066,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Start loading animation immediately
       setButtonLoading(generateBtn, true);
 
-      // Analyze current selected CVs before generating (only if files are selected)
-      let analysisResult = null;
-      const hasNewFiles = fileInput && fileInput.files && fileInput.files.length > 0;
-      if (hasNewFiles) {
-        try {
-          analysisResult = await runCvAnalysis({
-            statusElement: rulesStatus,
-            openModal: false,
-            suppressStatus: true
-          });
-          if (analysisResult && analysisResult.cvResultsForModal) {
-            submittedCvData = upsertByName(submittedCvData, analysisResult.cvResultsForModal);
-            renderSubmittedCvBubbles(submittedCvData);
-          }
-        } catch (err) {
-          setButtonLoading(generateBtn, false);
-          return;
-        }
-      }
+      // We rely on submittedCvData which contains the raw text
+      // We do NOT wait for parsing to finish.
 
       // Get current rules from UI (always use fresh UI state)
       const rules = getRulesFromUI();
@@ -1097,39 +1075,34 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         // ALWAYS update userRules based on current UI state
         if (rules.length > 0) {
-          // If there are rules, parse them
           const rulesText = rules.join("\n");
           userRules = await parseAndApplyRules(rulesText);
           saveUserRules(userRules);
         } else {
-          // If user deleted all rules, use empty array (AI will use its own reasoning)
           userRules = [];
           saveUserRules(userRules);
-          console.log("📝 No rules provided - AI will use its own reasoning");
         }
 
-        // Decide which CVs to generate for: prefer submitted data; else newly analyzed; else current uploadedCvs
-        const rawCvArrayForRec =
-          submittedCvData.length > 0
-            ? submittedCvData
-            : analysisResult?.uploadedCvs || uploadedCvs;
+        // Decide which CVs to generate for
+        const rawCvArrayForRec = submittedCvData;
 
+        // Optimize: Pass raw text directly, don't re-normalize if not needed, 
+        // but normalizeCvArray helper is robust.
         const cvArrayForRec = normalizeCvArray(rawCvArrayForRec);
 
         if (!cvArrayForRec || cvArrayForRec.length === 0) {
           throw new Error("No CVs available. Please upload or select CV files.");
         }
 
-        // Generate recommendations with current rules (empty array if no rules)
+        // Generate recommendations (Uses raw text, fast!)
         const recommendations = await analyzeCvsWithAI(cvArrayForRec, userRules, currentLang);
 
-        // Merge and display recommendations (matching by CV index)
+        // Merge and display
         applyRecommendationsToUi(recommendations, cvArrayForRec);
 
         setTimeout(() => {
           if (resultsSection) {
             resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            console.log('✅ Scrolled to recommendations section');
           }
         }, 300);
       } catch (err) {
@@ -1166,89 +1139,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     submitCvReview.addEventListener("click", async () => {
       // Save current tab edits back into modal state
       syncActiveCvFromDom();
-      const allResults = deepClone(modalCvData);
-
-      console.log("FINAL SUBMITTED CV DATA →", allResults);
-      // Upsert by CV name so previously submitted CVs keep their content
-      submittedCvData = upsertByName(submittedCvData, allResults);
-      renderSubmittedCvBubbles(submittedCvData);
-
-      // Clear file input so user must select new files for next analysis
-      if (fileInput) {
-        fileInput.value = "";
-      }
-      // Clear uploadedCvs so it doesn't process old data
-      uploadedCvs = [];
-      // Keep lastProcessedFileNames to prevent reprocessing same files
-      // They will be cleared when new files are selected
-      // Button should stay enabled since we have submitted CVs
-      const generateBtn = document.getElementById("generate-recommendations-btn");
-      if (generateBtn && submittedCvData.length > 0) {
-        generateBtn.disabled = false;
-      } else {
-        updateGenerateButton(uploadedCvs);
-      }
-
-      // INTEGRATED: Close modal
+      // Since objects are shared by reference in submittedCvData, we just need to close the modal
+      // and trigger any re-renders if necessary.
+      
       const modal = document.getElementById("cvModal");
       if (modal) {
         modal.style.display = "none";
-        console.log('✅ Modal closed');
       }
 
-      // Regenerate recommendations with updated CV data
+      // If user wants to re-generate recommendations after manual edits:
+      // They can just click the "Generate" button again.
+      // But per original logic, we trigger it automatically.
+      
       if (submittedCvData.length > 0) {
-        // Use the Generate Recommendations button loading animation
         const generateBtn = document.getElementById("generate-recommendations-btn");
         if (generateBtn) {
-          setButtonLoading(generateBtn, true);
-        }
-        
-        try {
-          // Get current rules from UI
-          const rules = getRulesFromUI();
-          
-          if (rules.length > 0) {
-            const rulesText = rules.join("\n");
-            userRules = await parseAndApplyRules(rulesText);
-            saveUserRules(userRules);
-          } else {
-            userRules = [];
-            saveUserRules(userRules);
-            console.log("📝 No rules provided - AI will use its own reasoning");
-          }
-
-          // Normalize submitted CV data for recommendations
-          const cvArrayForRec = normalizeCvArray(submittedCvData);
-
-          if (cvArrayForRec && cvArrayForRec.length > 0) {
-            // Generate recommendations with updated CV data
-            const recommendations = await analyzeCvsWithAI(cvArrayForRec, userRules, currentLang);
-
-            // Merge and display recommendations (matching by CV index)
-            applyRecommendationsToUi(recommendations, cvArrayForRec);
-
-            updateStatus(rulesStatus, "genSuccess");
-            
-            // Scroll to results
-            setTimeout(() => {
-              if (resultsSection) {
-                resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                console.log('✅ Scrolled to recommendations section');
-              }
-            }, 300);
-          }
-        } catch (err) {
-          console.error("Regeneration Error:", err);
-          updateStatus(
-            rulesStatus,
-            `Failed to regenerate recommendations. Error: ${err.message}`,
-            true
-          );
-        } finally {
-          if (generateBtn) {
-            setButtonLoading(generateBtn, false);
-          }
+            generateBtn.click(); // Reuse the click handler
         }
       }
     });
