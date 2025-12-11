@@ -337,6 +337,81 @@ For each CV, provide recommendations in a structured JSON format. The JSON must 
 Begin your response now with the JSON object only:
 `;
 }
+// ai.js
+
+// ... keep existing imports and functions ...
+
+/**
+ * NEW: Analyzes a single CV and returns recommendations for just that person.
+ */
+export async function analyzeSingleCvWithAI(cv, rulesArray, language = 'en') {
+  // We reuse the logic but scope the prompt to one CV
+  const catalogString = getCatalogAsPromptString();
+  const langInstruction = language === 'ar' 
+    ? "Output the 'reason' field strictly in Arabic. Keep 'candidateName' and 'certName' in their original text."
+    : "Output the 'reason' field in English.";
+
+  const prompt = `
+${ANALYSIS_SYSTEM_PROMPT.trim()}
+
+**Catalog of Certifications:**
+${catalogString}
+${langInstruction}
+
+**Business Rules:**
+${rulesArray && rulesArray.length > 0 ? rulesArray.map((r) => `- ${r}`).join("\n") : "No specific business rules provided."}
+
+**CV to Analyze:**
+--- CV Name: ${cv.name} ---
+${cv.text}
+
+**Task:**
+Provide recommendations for this specific candidate in strict JSON format.
+
+**JSON Structure:**
+{
+  "candidateName": "Full Name Extracted from CV",
+  "recommendations": [
+    {
+      "certId": "pmp",
+      "certName": "Project Management Professional (PMP)",
+      "reason": "Clear explanation of why this matches.",
+      "rulesApplied": ["Rule 1"]
+    }
+  ]
+}
+
+**CRITICAL:** Respond ONLY with valid JSON. No markdown formatting.
+`;
+
+  const rawResponse = await callGeminiAPI(prompt, [], "");
+  
+  // Cleaning logic (same as before)
+  let cleaned = rawResponse.trim();
+  cleaned = cleaned.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  }
+
+  try {
+    const singleResult = JSON.parse(cleaned);
+    // Ensure we attach the CV name reference for the UI
+    singleResult.cvName = cv.name; 
+    return singleResult;
+  } catch (err) {
+    console.error(`Error parsing AI response for ${cv.name}:`, err);
+    // Return a safe empty object so the loop continues
+    return {
+      candidateName: cv.name,
+      cvName: cv.name,
+      recommendations: [],
+      error: "Failed to generate recommendations."
+    };
+  }
+}
+
 
 export async function analyzeCvsWithAI(cvArray, rulesArray, language = 'en') {
   const analysisPrompt = buildAnalysisPromptForCvs(cvArray, rulesArray || [], language);

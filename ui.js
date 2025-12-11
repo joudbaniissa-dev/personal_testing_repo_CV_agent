@@ -34,6 +34,64 @@ import {
   callGeminiAPI,
 } from "./ai.js";
 
+// ui.js
+
+import { getFinalCertificateCatalog } from "./constants.js"; // Ensure this import exists
+import { analyzeSingleCvWithAI } from "./ai.js";
+
+function createCandidateCard(candidateData, language = 'en') {
+  const catalog = getFinalCertificateCatalog();
+  const candidateDiv = document.createElement("div");
+  candidateDiv.className = "candidate-result";
+  candidateDiv.style.opacity = "0"; // Start invisible for animation
+  candidateDiv.style.animation = "slideIn 0.5s forwards"; // Add CSS animation
+
+  // Header
+  const nameDiv = document.createElement("h3");
+  nameDiv.className = "candidate-name";
+  nameDiv.textContent = candidateData.candidateName || candidateData.cvName || "Candidate";
+  candidateDiv.appendChild(nameDiv);
+
+  if (candidateData.cvName && candidateData.cvName !== candidateData.candidateName) {
+    const fileDiv = document.createElement("div");
+    fileDiv.className = "candidate-cv-name";
+    fileDiv.textContent = `File: ${candidateData.cvName}`;
+    candidateDiv.appendChild(fileDiv);
+  }
+
+  // Recommendations
+  if (candidateData.recommendations && candidateData.recommendations.length > 0) {
+    candidateData.recommendations.forEach((rec) => {
+      let displayName = rec.certName;
+      // Handle Arabic mapping if needed
+      if (language === 'ar') {
+        const found = catalog.find(c => c.name === rec.certName || c.Certificate_Name_EN === rec.certName);
+        if (found && found.nameAr) displayName = found.nameAr;
+      }
+
+      const card = document.createElement("div");
+      card.className = "recommendation-card";
+      card.innerHTML = `
+        <div class="recommendation-title">${displayName}</div>
+        <div class="recommendation-reason">
+          <i class="fas fa-lightbulb"></i> ${rec.reason}
+        </div>
+        ${rec.rulesApplied && rec.rulesApplied.length > 0
+            ? `<div class="recommendation-rule"><i class="fas fa-gavel"></i> Rules: ${rec.rulesApplied.join(", ")}</div>`
+            : ""
+        }
+      `;
+      candidateDiv.appendChild(card);
+    });
+  } else {
+    const msg = document.createElement("p");
+    msg.textContent = candidateData.error || "No specific recommendations found.";
+    candidateDiv.appendChild(msg);
+  }
+
+  return candidateDiv;
+}
+
 // --- TRANSLATIONS FOR DYNAMIC UI ---
 const UI_TEXT = {
   en: {
@@ -1063,58 +1121,56 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Generate Recommendations button - Generates recommendations
   if (generateBtn) {
     generateBtn.addEventListener("click", async () => {
-      // Start loading animation immediately
       setButtonLoading(generateBtn, true);
+      
+      // 1. Prepare UI
+      const recommendationsContainer = document.getElementById("recommendations-container");
+      const resultsSection = document.getElementById("results-section");
+      
+      recommendationsContainer.innerHTML = ""; // Clear previous results
+      resultsSection.classList.remove("hidden"); // Show section immediately
+      resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-      // We rely on submittedCvData which contains the raw text
-      // We do NOT wait for parsing to finish.
-
-      // Get current rules from UI (always use fresh UI state)
+      // 2. Get Data
       const rules = getRulesFromUI();
+      const cvArray = submittedCvData; // Use the data that is already parsed/extracted
 
-      try {
-        // ALWAYS update userRules based on current UI state
-        if (rules.length > 0) {
-          const rulesText = rules.join("\n");
-          userRules = await parseAndApplyRules(rulesText);
-          saveUserRules(userRules);
-        } else {
-          userRules = [];
-          saveUserRules(userRules);
+      // 3. The "Streaming" Loop
+      // We use a simple for...of loop to process one by one. 
+      // This ensures order and prevents hitting API rate limits too hard.
+      
+      let completedCount = 0;
+
+      for (const cv of cvArray) {
+        // A. Create a "Loading" placeholder for this specific CV
+        const placeholder = document.createElement("div");
+        placeholder.className = "candidate-result";
+        placeholder.innerHTML = `
+          <h3 class="candidate-name">${cv.name}</h3>
+          <div class="loader" style="margin: 10px 0;"></div> Analyzing...
+        `;
+        recommendationsContainer.appendChild(placeholder);
+
+        try {
+          // B. Analyze ONLY this CV
+          const result = await analyzeSingleCvWithAI(cv, rules, document.documentElement.lang);
+          
+          // C. Create the actual Result Card
+          const resultCard = createCandidateCard(result, document.documentElement.lang);
+          
+          // D. Swap placeholder with result
+          recommendationsContainer.replaceChild(resultCard, placeholder);
+          
+        } catch (err) {
+          console.error(err);
+          placeholder.innerHTML = `<p style="color:red">Error analyzing ${cv.name}</p>`;
         }
-
-        // Decide which CVs to generate for
-        const rawCvArrayForRec = submittedCvData;
-
-        // Optimize: Pass raw text directly, don't re-normalize if not needed, 
-        // but normalizeCvArray helper is robust.
-        const cvArrayForRec = normalizeCvArray(rawCvArrayForRec);
-
-        if (!cvArrayForRec || cvArrayForRec.length === 0) {
-          throw new Error("No CVs available. Please upload or select CV files.");
-        }
-
-        // Generate recommendations (Uses raw text, fast!)
-        const recommendations = await analyzeCvsWithAI(cvArrayForRec, userRules, currentLang);
-
-        // Merge and display
-        applyRecommendationsToUi(recommendations, cvArrayForRec);
-
-        setTimeout(() => {
-          if (resultsSection) {
-            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }, 300);
-      } catch (err) {
-        console.error("Recommendation Error:", err);
-        updateStatus(
-          rulesStatus,
-          `Failed to generate recommendations. Error: ${err.message}`,
-          true
-        );
-      } finally {
-        setButtonLoading(generateBtn, false);
+        
+        completedCount++;
       }
+
+      setButtonLoading(generateBtn, false);
+      updateStatus(rulesStatus, `Completed ${completedCount} CVs.`);
     });
   }
 
