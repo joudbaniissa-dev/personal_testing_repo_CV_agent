@@ -337,13 +337,8 @@ For each CV, provide recommendations in a structured JSON format. The JSON must 
 Begin your response now with the JSON object only:
 `;
 }
-// ai.js
 
-// ... keep existing imports and functions ...
-
-/**
- * NEW: Analyzes a single CV and returns recommendations for just that person.
- */
+// START OF EDIT BY JOUD
 /**
  * NEW: Analyzes a single CV and returns recommendations for just that person.
  * Includes robust JSON extraction to handle AI chatter.
@@ -455,7 +450,7 @@ Provide recommendations for this specific candidate in strict JSON format.
     };
   }
 }
-
+// END OF EDIT BY JOUD
 
 export async function analyzeCvsWithAI(cvArray, rulesArray, language = 'en') {
   const analysisPrompt = buildAnalysisPromptForCvs(cvArray, rulesArray || [], language);

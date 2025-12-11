@@ -34,8 +34,7 @@ import {
   callGeminiAPI,
 } from "./ai.js";
 
-// ui.js
-
+// START OF EDIT BY JOUD
 import { getFinalCertificateCatalog } from "./constants.js"; // Ensure this import exists
 import { analyzeSingleCvWithAI } from "./ai.js";
 
@@ -91,6 +90,7 @@ function createCandidateCard(candidateData, language = 'en') {
 
   return candidateDiv;
 }
+// END OF EDIT BY JOUD
 
 // --- TRANSLATIONS FOR DYNAMIC UI ---
 const UI_TEXT = {
@@ -1118,6 +1118,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
 
+  // START OF EDIT BY JOUD
   // Generate Recommendations button - Generates recommendations
   if (generateBtn) {
     generateBtn.addEventListener("click", async () => {
@@ -1173,6 +1174,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateStatus(rulesStatus, `Completed ${completedCount} CVs.`);
     });
   }
+  // END OF EDIT BY JOUD
 
   // Modal close behavior
   const closeBtn = document.querySelector(".cv-close-btn");
