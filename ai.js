@@ -344,8 +344,11 @@ Begin your response now with the JSON object only:
 /**
  * NEW: Analyzes a single CV and returns recommendations for just that person.
  */
+/**
+ * NEW: Analyzes a single CV and returns recommendations for just that person.
+ * Includes robust JSON extraction to handle AI chatter.
+ */
 export async function analyzeSingleCvWithAI(cv, rulesArray, language = 'en') {
-  // We reuse the logic but scope the prompt to one CV
   const catalogString = getCatalogAsPromptString();
   const langInstruction = language === 'ar' 
     ? "Output the 'reason' field strictly in Arabic. Keep 'candidateName' and 'certName' in their original text."
@@ -386,23 +389,64 @@ Provide recommendations for this specific candidate in strict JSON format.
 
   const rawResponse = await callGeminiAPI(prompt, [], "");
   
-  // Cleaning logic (same as before)
+  // --- ROBUST JSON EXTRACTION LOGIC ---
   let cleaned = rawResponse.trim();
-  cleaned = cleaned.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  
+  // Helper to extract JSON by balancing braces
+  function extractJSON(str) {
+    const startIndex = str.indexOf('{');
+    if (startIndex === -1) return null;
+
+    let balance = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = startIndex; i < str.length; i++) {
+      const char = str[i];
+
+      if (inString) {
+        if (char === '\\' && !escaped) escaped = true;
+        else if (char === '"' && !escaped) inString = false;
+        else escaped = false;
+      } else {
+        if (char === '"') {
+          inString = true;
+        } else if (char === '{') {
+          balance++;
+        } else if (char === '}') {
+          balance--;
+          if (balance === 0) {
+            // Found the matching closing brace
+            return str.substring(startIndex, i + 1);
+          }
+        }
+      }
+    }
+    return null;
   }
+
+  const jsonSubset = extractJSON(cleaned);
+  
+  // Fallback to original cleaning if extractor fails (rare)
+  if (jsonSubset) {
+    cleaned = jsonSubset;
+  } else {
+    cleaned = cleaned.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+  }
+  // -------------------------------------
 
   try {
     const singleResult = JSON.parse(cleaned);
-    // Ensure we attach the CV name reference for the UI
     singleResult.cvName = cv.name; 
     return singleResult;
   } catch (err) {
     console.error(`Error parsing AI response for ${cv.name}:`, err);
-    // Return a safe empty object so the loop continues
+    console.log("Failed content:", cleaned); // Log for debugging
     return {
       candidateName: cv.name,
       cvName: cv.name,
