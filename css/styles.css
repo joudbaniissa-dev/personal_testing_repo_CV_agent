@@ -875,7 +875,7 @@ body.keep-ltr-layout .bot-message ul { padding-right: 18px; padding-left: 0; mar
 
 .lang-btn:hover { background: rgba(255,255,255,0.3); }
 .cv-select-checkbox { margin-right: 8px; cursor: pointer; }
-
+/* 12-15-2025 Joud start */
 /* --- TOGGLE SWITCH (Save Session) --- */
 .toggle-switch-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: white; font-size: 0.9rem; font-weight: 500; user-select: none; }
 .toggle-switch-label input { display: none; }
@@ -884,3 +884,4 @@ body.keep-ltr-layout .bot-message ul { padding-right: 18px; padding-left: 0; mar
 .toggle-switch-label input:checked + .toggle-slider { background-color: var(--secondary); border-color: var(--secondary); }
 .toggle-switch-label input:checked + .toggle-slider::before { transform: translateX(18px); }
 .toggle-text { font-size: 0.9rem; white-space: nowrap; }
+/* 12-15-2025 joud end */
