@@ -11,14 +11,16 @@ import {
   getFinalCertificateCatalog,
 } from "./constants.js";
 
+// 12-15-2025 Joud start
 // New Key for Persistence Flag
 export const PERSISTENCE_KEY = "skillMatchIsSessionSaved";
 // NEW: Key for saving uploaded CVs
 export const SUBMITTED_CVS_KEY = "skillMatchSubmittedCvs";
+// 12-15-2025 joud end
 
 // Certificate catalog (loaded on init)
 export let certificateCatalog = [];
-
+// 12-15-2025 Joud start
 // --- PERSISTENCE HELPERS (MUST BE EXPORTED) ---
 
 export function isPersistenceEnabled() {
@@ -36,12 +38,15 @@ export function setPersistence(enabled) {
     // Note: We keep CERT_CATALOG_KEY as it's static public data, not PII
   }
 }
+// 12-15-2025 joud end
 
 // --- DATA MANAGEMENT ---
 
 // Save chat history (Conditional)
 export function saveChatHistory(chatHistory) {
+  // 12-15-2025 Joud start
   if (!isPersistenceEnabled()) return; // STOP if toggle is off
+  // 12-15-2025 joud end
   try {
     localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
   } catch (err) {
@@ -64,7 +69,9 @@ export function loadChatHistory() {
 
 // Save user rules (Conditional)
 export function saveUserRules(userRules) {
+  // 12-15-2025 Joud start
   if (!isPersistenceEnabled()) return; // STOP if toggle is off
+  // 12-15-2025 joud end
   try {
     localStorage.setItem(USER_RULES_KEY, JSON.stringify(userRules));
   } catch (err) {
@@ -89,7 +96,9 @@ export function loadUserRules() {
 
 // Save last recommendations (Conditional)
 export function saveLastRecommendations(lastRecommendations) {
+  // 12-15-2025 Joud start
   if (!isPersistenceEnabled()) return; // STOP if toggle is off
+  // 12-15-2025 Joud start
   try {
     localStorage.setItem(
       LAST_RECOMMENDATIONS_KEY,
@@ -113,6 +122,7 @@ export function loadLastRecommendations() {
   }
 }
 
+// 12-15-2025 Joud start
 // NEW: Save Submitted CVs (Conditional)
 export function saveSubmittedCvs(cvs) {
   if (!isPersistenceEnabled()) return; // STOP if toggle is off
@@ -137,7 +147,7 @@ export function loadSubmittedCvs() {
     return [];
   }
 }
-
+// 12-15-2025 joud end
 // Load certificate catalog (async - loads from JSON file)
 export async function loadCertificateCatalog() {
   // Initialize certificates if not already loaded
