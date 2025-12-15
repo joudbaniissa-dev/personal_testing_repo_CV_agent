@@ -21,6 +21,8 @@ import {
   calculateYearsFromPeriod,
   setPersistence,
   isPersistenceEnabled,
+  saveSubmittedCvs, // Imported
+  loadSubmittedCvs, // Imported
 } from "./storage-catalog.js";
 
 import {
@@ -40,7 +42,7 @@ import {
 
 // --- GLOBAL STATE ---
 let currentLang = 'en';
-let chatHistory = []; // Moved to global scope to support saving
+let chatHistory = []; 
 let uploadedCvs = [];
 let submittedCvData = [];
 let allRecommendationsMap = {};
@@ -1114,6 +1116,9 @@ const renderSubmittedCvBubbles = (allResults) => {
       const cvToRemove = submittedCvData[idx];
       submittedCvData = submittedCvData.filter((_, i) => i !== idx);
       
+      // SAVE CVs after deletion
+      saveSubmittedCvs(submittedCvData);
+
       if (cvToRemove && cvToRemove.name && allRecommendationsMap[cvToRemove.name]) {
         delete allRecommendationsMap[cvToRemove.name];
         const allRecommendations = { candidates: Object.values(allRecommendationsMap) };
@@ -1151,7 +1156,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     setPersistence(false); // Ensure keys are wiped on start if not enabled
   }
 
-  // Load chat history
+  // 1. CRITICAL: Load Catalog FIRST so recommendations can look up hours
+  await loadCertificateCatalog();
+
+  // 2. Initialize Language
+  initializeLanguage();
+
+  // 3. Load chat history
   const history = loadChatHistory();
   if (Array.isArray(history) && history.length > 0) {
     chatHistory = history;
@@ -1162,7 +1173,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     clearChatHistoryDom();
   }
 
-  // Load recommendations
+  // 4. Load recommendations AND Check Download Button
   const savedRecs = loadLastRecommendations();
   if (savedRecs) {
     lastRecommendations = savedRecs;
@@ -1171,15 +1182,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (recommendationsContainer && resultsSection && lastRecommendations.candidates.length > 0) {
       const { displayRecommendations } = await import("./ai.js");
       displayRecommendations(lastRecommendations, recommendationsContainer, resultsSection, currentLang);
+      // FIX: Check button visibility immediately on load
+      updateDownloadButtonVisibility(lastRecommendations);
     }
   } else {
     saveLastRecommendations({ candidates: [] }); // Will only save if persistence enabled
   }
-  
-  initializeLanguage();
-  
-  await loadCertificateCatalog();
 
+  // 5. NEW: Load Persisted CVs
+  const savedCvs = loadSubmittedCvs();
+  if (savedCvs && savedCvs.length > 0) {
+    submittedCvData = savedCvs;
+    renderSubmittedCvBubbles(submittedCvData);
+    updateGenerateButton(submittedCvData);
+  }
+  
   const userInput = document.getElementById("user-input");
   const sendButton = document.getElementById("send-button");
   const fileInput = document.getElementById("file-input");
@@ -1219,11 +1236,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         saveChatHistory(chatHistory);
         saveUserRules(getRulesFromUI());
         saveLastRecommendations(lastRecommendations);
+        saveSubmittedCvs(submittedCvData); // Save CVs
       }
       
-      // We can use a simple alert or a status message
-      // alert(msg); 
-      // Better: use the uploadStatus or a toast if available
       updateStatus(uploadStatus, msg, false, msg);
     });
   }
@@ -1376,10 +1391,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
         const extracted = await Promise.all(files.map(async (file) => {
             const rawText = await extractTextFromFile(file);
-            return { name: file.name, text: rawText, structured: null, isParsing: true, selected: true  }; // ✅ ADD selected: true  to THIS
+            return { name: file.name, text: rawText, structured: null, isParsing: true, selected: true  }; 
         }));
 
         upsertAndRenderSubmittedCvs(extracted);
+        
+        // SAVE newly uploaded CVs
+        saveSubmittedCvs(submittedCvData);
+
         updateStatus(uploadStatus, "success");
         const generateBtn = document.getElementById("generate-recommendations-btn");
         if (generateBtn) generateBtn.disabled = false;
@@ -1417,10 +1436,16 @@ document.addEventListener("DOMContentLoaded", async () => {
               cvRef.structured = structuredSections;
               cvRef.isParsing = false;
               renderSubmittedCvBubbles(submittedCvData);
+              
+              // SAVE after parsing complete
+              saveSubmittedCvs(submittedCvData);
+
           } catch (err) {
               console.error(`Background parsing failed for ${cvRef.name}`, err);
               cvRef.isParsing = false;
               renderSubmittedCvBubbles(submittedCvData);
+              // Save anyway to remove spinner state
+              saveSubmittedCvs(submittedCvData);
           }
       });
   }
@@ -1502,6 +1527,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (submitCvReview) {
     submitCvReview.addEventListener("click", async () => {
       syncActiveCvFromDom();
+      // SAVE updated data from modal
+      saveSubmittedCvs(submittedCvData);
+      
       document.getElementById("cvModal").style.display = "none";
       if (submittedCvData.length > 0) {
         const generateBtn = document.getElementById("generate-recommendations-btn");

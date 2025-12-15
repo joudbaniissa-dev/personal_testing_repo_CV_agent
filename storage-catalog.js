@@ -13,6 +13,8 @@ import {
 
 // New Key for Persistence Flag
 export const PERSISTENCE_KEY = "skillMatchIsSessionSaved";
+// NEW: Key for saving uploaded CVs
+export const SUBMITTED_CVS_KEY = "skillMatchSubmittedCvs";
 
 // Certificate catalog (loaded on init)
 export let certificateCatalog = [];
@@ -30,6 +32,7 @@ export function setPersistence(enabled) {
     localStorage.removeItem(CHAT_HISTORY_KEY);
     localStorage.removeItem(USER_RULES_KEY);
     localStorage.removeItem(LAST_RECOMMENDATIONS_KEY);
+    localStorage.removeItem(SUBMITTED_CVS_KEY); // Wipe CVs too
     // Note: We keep CERT_CATALOG_KEY as it's static public data, not PII
   }
 }
@@ -107,6 +110,31 @@ export function loadLastRecommendations() {
   } catch (err) {
     console.error("Failed to parse last recommendations:", err);
     return null;
+  }
+}
+
+// NEW: Save Submitted CVs (Conditional)
+export function saveSubmittedCvs(cvs) {
+  if (!isPersistenceEnabled()) return; // STOP if toggle is off
+  try {
+    // Basic protection: LocalStorage has a size limit (usually 5MB).
+    // If we try to save too much (many large CVs), it might throw.
+    localStorage.setItem(SUBMITTED_CVS_KEY, JSON.stringify(cvs));
+  } catch (err) {
+    console.warn("Failed to save CVs (likely quota exceeded):", err);
+  }
+}
+
+// NEW: Load Submitted CVs
+export function loadSubmittedCvs() {
+  const saved = localStorage.getItem(SUBMITTED_CVS_KEY);
+  if (!saved) return [];
+  try {
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error("Failed to parse saved CVs:", err);
+    return [];
   }
 }
 

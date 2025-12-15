@@ -152,12 +152,34 @@ img,video{ max-width:100%; height:auto; display:block; }
 }
 
 /* buttons */
-button { display:inline-flex; align-items:center; gap:8px; justify-content:center; border-radius: 999px; border: none; background: var(--primary); color:white; padding: 10px 14px; cursor:pointer; font-weight:500; }
+button { 
+  display:inline-flex; 
+  align-items:center; 
+  gap:8px; 
+  justify-content:center; 
+  border-radius: 999px; 
+  border: none; 
+  background: var(--primary); 
+  color:white; 
+  padding: 10px 14px; 
+  cursor:pointer; 
+  font-weight:500; 
+  min-height: 40px; /* Ensure minimum height */
+}
 button:focus { outline: 3px solid rgba(0,0,0,0.06); outline-offset: 2px; }
 button:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
 
 /* primary full-width for panel actions */
-.action-full { width: 100%; border-radius: 10px; padding: 12px; }
+.action-full { 
+  width: 100%; 
+  border-radius: 10px; 
+  padding: 14px 12px; 
+  min-height: 52px; /* Force minimum height */
+  line-height: 1.5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* === SIDE PANEL === */
 .side-panel { 
@@ -1285,112 +1307,6 @@ html[lang="ar"] .search-icon {
   left: auto;
   right: 14px; /* Move icon to right */
 }
-
-/* CV results container */
-.cv-results {
-  margin-top: var(--space-s);
-}
-
-/* Section-specific styles */
-.cv-section-experience .item-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.cv-section-experience .item-row .cv-field-job-title {
-  grid-column: 1 / -1;
-}
-
-.cv-section-experience .item-row .cv-description-textarea {
-  grid-column: 1 / -1;
-}
-
-.cv-section-education .item-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.cv-section-education .item-row .education-degree-input {
-  grid-column: 1 / -1;
-}
-
-/* small helpers */
-.muted { color: var(--muted); font-size: 0.95rem; }
-
-/* hidden utility */
-.hidden { display:none !important; }
-
-/* Fix unwanted horizontal scroll */
-html, body {
-  overflow-x: hidden;
-}
-
-/* Prevent flex child expansion */
-.main-content > * {
-  min-width: 0;
-}
-
-/* Prevent text elements from pushing layout */
-.message,
-#chat-messages,
-.panel-section,
-.cv-tabs,
-.cv-results {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-
-/* 11-12-2025 liyan's updates */
-/* =========================================
-   CV Search Bar Styles
-   ========================================= */
-   .cv-search-container {
-    position: relative;
-    margin-bottom: 12px;
-    width: 100%;
-    max-width: 100%;
-  }
-  
-  .cv-search-input {
-    width: 100%;
-    padding: 10px 12px 10px 38px; /* Extra padding on left for icon */
-    border: 1px solid rgba(0,0,0,0.1);
-    border-radius: 24px; /* Curved / Pill shape */
-    font-size: 0.95rem;
-    background: #f9f9f9;
-    outline: none;
-    transition: all 0.2s ease;
-    color: var(--text);
-  }
-  
-  .cv-search-input:focus {
-    background: #fff;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(21,135,138,0.1);
-  }
-  
-  .search-icon {
-    position: absolute;
-    left: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--muted);
-    font-size: 1rem;
-    pointer-events: none; /* Let clicks pass through to input */
-  }
-  
-  /* Arabic RTL Overrides for Search */
-  html[lang="ar"] .cv-search-input {
-    padding: 10px 38px 10px 12px; /* Swap padding for RTL */
-  }
-  
-  html[lang="ar"] .search-icon {
-    left: auto;
-    right: 14px; /* Move icon to right */
-  }
 
 
   /* =========================================
