@@ -11,11 +11,34 @@ import {
   getFinalCertificateCatalog,
 } from "./constants.js";
 
+// New Key for Persistence Flag
+export const PERSISTENCE_KEY = "skillMatchIsSessionSaved";
+
 // Certificate catalog (loaded on init)
 export let certificateCatalog = [];
 
-// Save chat history
+// --- PERSISTENCE HELPERS (MUST BE EXPORTED) ---
+
+export function isPersistenceEnabled() {
+  return localStorage.getItem(PERSISTENCE_KEY) === "true";
+}
+
+export function setPersistence(enabled) {
+  localStorage.setItem(PERSISTENCE_KEY, enabled ? "true" : "false");
+  if (!enabled) {
+    // If disabled, wipe sensitive user data immediately
+    localStorage.removeItem(CHAT_HISTORY_KEY);
+    localStorage.removeItem(USER_RULES_KEY);
+    localStorage.removeItem(LAST_RECOMMENDATIONS_KEY);
+    // Note: We keep CERT_CATALOG_KEY as it's static public data, not PII
+  }
+}
+
+// --- DATA MANAGEMENT ---
+
+// Save chat history (Conditional)
 export function saveChatHistory(chatHistory) {
+  if (!isPersistenceEnabled()) return; // STOP if toggle is off
   try {
     localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
   } catch (err) {
@@ -36,8 +59,9 @@ export function loadChatHistory() {
   }
 }
 
-// Save user rules
+// Save user rules (Conditional)
 export function saveUserRules(userRules) {
+  if (!isPersistenceEnabled()) return; // STOP if toggle is off
   try {
     localStorage.setItem(USER_RULES_KEY, JSON.stringify(userRules));
   } catch (err) {
@@ -60,8 +84,9 @@ export function loadUserRules() {
   return [...DEFAULT_RULES];
 }
 
-// Save last recommendations
+// Save last recommendations (Conditional)
 export function saveLastRecommendations(lastRecommendations) {
+  if (!isPersistenceEnabled()) return; // STOP if toggle is off
   try {
     localStorage.setItem(
       LAST_RECOMMENDATIONS_KEY,
@@ -93,7 +118,7 @@ export async function loadCertificateCatalog() {
   // Get the loaded certificates
   certificateCatalog = getFinalCertificateCatalog();
   
-  // Persist to localStorage for faster future loads
+  // Persist to localStorage for faster future loads (Static data, safe to persist)
   if (certificateCatalog && certificateCatalog.length > 0) {
     saveCertificateCatalog(certificateCatalog);
   }
