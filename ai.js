@@ -492,10 +492,21 @@ export async function analyzeCvsWithAI(cvArray, rulesArray, language = 'en') {
 }
 
 export function displayRecommendations(recommendations, containerEl, resultsSectionEl, language = 'en') {
-  if (!containerEl || !resultsSectionEl) return;
+  console.log("📋 displayRecommendations called with:", recommendations);
+  if (!containerEl || !resultsSectionEl) {
+    console.error("❌ displayRecommendations: Missing container or resultsSection elements!");
+    return;
+  }
   const catalog = getFinalCertificateCatalog(); // Load catalog
+  console.log("📚 Catalog loaded, certificates count:", catalog.length);
   containerEl.innerHTML = "";
 
+  function getColor(hours) {
+    if (hours <= 100) return "#c8f7c5";
+    if (hours < 200) return "#ffe5b4";
+    return "#f5b5b5";
+  }
+  
   if (
     !recommendations ||
     !recommendations.candidates ||
@@ -530,6 +541,9 @@ export function displayRecommendations(recommendations, containerEl, resultsSect
       }
       candidateDiv.appendChild(nameDiv);
 
+      const candidateTimeline = [];
+      let candidateTotalHours = 0;
+
       if (candidate.recommendations && candidate.recommendations.length > 0) {
         candidate.recommendations.forEach((rec) => {
           let displayName = rec.certName;
@@ -537,13 +551,54 @@ export function displayRecommendations(recommendations, containerEl, resultsSect
             const found = catalog.find(c => c.name === rec.certName || c.Certificate_Name_EN === rec.certName);
             if (found && found.nameAr) displayName = found.nameAr;
           }
+
+          // Find catalog entry for this recommendation
+          const catalogEntry =
+            catalog.find(c => c.id === rec.certId) ||
+            catalog.find(c =>
+              c.name === rec.certName ||
+              c.Certificate_Name_EN === rec.certName
+            );
+
+          // Get hours from catalog entry
+          const rawHours =
+            catalogEntry?.Estimated_Hours_To_Complete ??
+            catalogEntry?.estimatedHours ??
+            catalogEntry?.estimated_hours ??
+            0;
+          let hours = Number(rawHours) || 0;
+          
+          // Debug: log if hours are found
+          if (!hours && catalogEntry) {
+            console.warn(`No hours found for certificate: ${rec.certName}`, catalogEntry);
+          }
+          
+          candidateTimeline.push({ name: displayName, hours });
+          candidateTotalHours += hours;
+
           const card = document.createElement("div");
           card.className = "recommendation-card";
+
+          const hourWord = language === "ar" ? "ساعة" : "hours";
+          const hoursText =
+            hours > 0
+              ? `${hours} ${hourWord}`
+              : (language === "ar" ? "غير متوفر" : "N/A");
+
           card.innerHTML = `
             <div class="recommendation-title">${displayName}</div>
             <div class="recommendation-reason">
               <i class="fas fa-lightbulb"></i> ${rec.reason}
             </div>
+            <div class="recommendation-hours">
+            <i class="far fa-clock"></i>
+            <span>${language === "ar"
+                    ? "الوقت التقديري لإكمال الشهادة:"
+                    : "Estimated time to complete:"}
+            </span>
+            <strong>${hoursText}</strong>
+            </div>
+            
             ${
               rec.rulesApplied && rec.rulesApplied.length > 0
                 ? `<div class="recommendation-rule">
@@ -563,11 +618,97 @@ export function displayRecommendations(recommendations, containerEl, resultsSect
         candidateDiv.appendChild(noRecP);
       }
 
+      // Show timeline only if there are recommendations with hours > 0
+      console.log("📊 displayRecommendations - Timeline data for candidate:", {
+        candidateName: candidate.candidateName || candidate.cvName,
+        timelineLength: candidateTimeline.length,
+        totalHours: candidateTotalHours,
+        timeline: candidateTimeline
+      });
+      
+      if (candidateTimeline.length > 0 && candidateTotalHours > 0) {
+        console.log("✅ Creating timeline visualization in displayRecommendations");
+        const timelineWrapper = document.createElement("div");
+        timelineWrapper.className = "timeline-wrapper";
+        const titleText =
+          language === "ar"
+            ? "الوقت التقريبي لإكمال الشهادات المقترحة"
+            : "Estimated timeline to complete recommended certificates";
+        const totalLabelAr = "الإجمالي";
+        const hourWord = language === "ar" ? "ساعة" : "hours";
+        const isArabic = language === "ar";
+        const barsHtml = `
+          <div class="stacked-bar ${isArabic ? "stacked-bar-rtl" : ""}">
+            ${candidateTimeline
+            .map((item) => {
+              const safeHours = Number(item.hours) || 0;
+              const percentage =
+                safeHours > 0 ? (safeHours / candidateTotalHours) * 100 : 0;
+              const displayHours = `${safeHours} ${hourWord}`;
+              const color = getColor ? getColor(safeHours) : "#f4b6b6";
+              return `
+                  <div class="bar-segment" style="width:${percentage}%; background:${color}">
+                    <span class="segment-hours">${displayHours}</span>
+                  </div>
+                `;
+            })
+            .join("")}
+          </div>
+          <div class="stacked-labels ${isArabic ? "stacked-labels-rtl" : ""}">
+            ${candidateTimeline
+            .map((item) => {
+              const safeHours = Number(item.hours) || 0;
+              const percentage =
+                safeHours > 0 ? (safeHours / candidateTotalHours) * 100 : 0;
+              return `
+                  <div class="segment-label" style="width:${percentage}%">
+                    ${item.name}
+                  </div>
+                `;
+            })
+            .join("")}
+          </div>
+        `;
+        const totalHtml =
+          language === "ar"
+            ? `<div class="total-label">${totalLabelAr}: <strong>${candidateTotalHours}</strong> ${hourWord}</div>`
+            : `<div class="total-label">Total: <strong>${candidateTotalHours}</strong> ${hourWord}</div>`;
+        timelineWrapper.innerHTML = `
+          <h4 class="timeline-title ${isArabic ? "timeline-title-rtl" : ""}">
+  ${titleText}
+</h4>
+          <div class="stacked-timeline ${isArabic ? "stacked-timeline-rtl" : ""}">
+            ${barsHtml}
+            <div class="total-row">
+              <div class="total-line"></div>
+              ${totalHtml}
+            </div>
+          </div>
+        `;
+        candidateDiv.appendChild(timelineWrapper);
+        console.log("✅ Timeline added to candidate div in displayRecommendations");
+      } else {
+        console.log("⚠️ Timeline NOT shown in displayRecommendations - no hours or empty timeline", {
+          timelineLength: candidateTimeline.length,
+          totalHours: candidateTotalHours
+        });
+      }
+
       containerEl.appendChild(candidateDiv);
     });
   }
 
-  resultsSectionEl.classList.remove("hidden");
+  // Always show results section when recommendations are displayed
+  if (resultsSectionEl) {
+    resultsSectionEl.classList.remove("hidden");
+    console.log("✅ Results section shown (hidden class removed)");
+    console.log("   Results section classes:", resultsSectionEl.className);
+  } else {
+    console.error("❌ Results section element not found!");
+  }
+  
+  console.log("📊 displayRecommendations completed. Total candidates displayed:", 
+    recommendations?.candidates?.length || 0);
 }
 
 // Re-export utility used in UI for CV summary
